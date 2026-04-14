@@ -5,16 +5,16 @@ import { NextRequest, NextResponse } from 'next/server'
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { nomePet, especie, emoji } = body
+    const { nome, nomePet, especie, raca, sexo, dataNascimento, peso, emoji } = body
 
-    if (!nomePet || !especie) {
+    const petNome = nome || nomePet
+    if (!petNome || !especie) {
       return NextResponse.json({ error: 'Nome e espécie são obrigatórios' }, { status: 400 })
     }
 
-    // Verificar autenticação
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
     }
@@ -30,16 +30,18 @@ export async function POST(req: NextRequest) {
 
     const pet = await prisma.pet.create({
       data: {
-        nome: nomePet,
+        nome: petNome,
         especie,
+        raca: raca || null,
+        sexo: sexo || null,
+        dataNascimento: dataNascimento ? new Date(dataNascimento) : null,
+        peso: peso ? parseFloat(String(peso)) : null,
         emoji: emoji || '🐕',
         familiaId: usuario.membro.familiaId,
-        dataNascimento: null,
-        observacoes: ''
       }
     })
 
-    return NextResponse.json({ success: true, pet })
+    return NextResponse.json(pet)
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Erro desconhecido'
     console.error('❌ POST /api/pet:', message)

@@ -19,7 +19,8 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
     setLoading(false)
     if (error) {
-      toast.error('E-mail ou senha incorretos.')
+      console.error('Login error:', error.message, error.status, error)
+      toast.error(error.message || 'E-mail ou senha incorretos.')
       return
     }
     router.push('/dashboard')
