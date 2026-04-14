@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Usuario {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  nome      String
+  avatarUrl String?  @map("avatar_url")
+  criadoEm DateTime @default(now()) @map("criado_em")
+
+  membro       Membro?
+  notificacoes Notificacao[]
+
+  @@map("usuarios")
+}
+
+model Familia {
+  id            String   @id @default(uuid())
+  nome          String
+  codigoConvite String   @unique @map("codigo_convite")
+  criadaEm     DateTime @default(now()) @map("criada_em")
+
+  membros      Membro[]
+  pets         Pet[]
+  notificacoes Notificacao[]
+
+  @@map("familias")
+}
+
+model Membro {
+  id        String      @id @default(uuid())
+  papel     PapelMembro @default(MEMBRO)
+  entradaEm DateTime   @default(now()) @map("entrada_em")
+
+  usuarioId String  @unique @map("usuario_id")
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  familiaId String  @map("familia_id")
+  familia   Familia @relation(fields: [familiaId], references: [id], onDelete: Cascade)
+
+  administracoes Administracao[]
+  passeios       Passeio[]
+  execucoes      Execucao[]
+
+  @@map("membros")
+}
+
+enum PapelMembro {
+  ADMIN
+  MEMBRO
+}
+
+model Pet {
+  id             String    @id @default(uuid())
+  nome           String
+  especie        String
+  raca           String?
+  sexo           String?
+  dataNascimento DateTime? @map("data_nascimento")
+  peso           Float?
+  fotoUrl        String?   @map("foto_url")
+  emoji          String    @default("🐾")
+  criadoEm      DateTime  @default(now()) @map("criado_em")
+
+  familiaId String  @map("familia_id")
+  familia   Familia @relation(fields: [familiaId], references: [id], onDelete: Cascade)
+
+  remedios Remedio[]
+  passeios Passeio[]
+  cuidados Cuidado[]
+
+  @@map("pets")
+}
+
+model Remedio {
+  id         String            @id @default(uuid())
+  nome       String
+  dose       String
+  frequencia FrequenciaRemedio
+  dataInicio DateTime          @map("data_inicio")
+  dataFim    DateTime?         @map("data_fim")
+  ativo      Boolean           @default(true)
+  criadoEm  DateTime          @default(now()) @map("criado_em")
+
+  petId String @map("pet_id")
+  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  administracoes Administracao[]
+
+  @@map("remedios")
+}
+
+enum FrequenciaRemedio {
+  DIARIO
+  SEMANAL
+  QUINZENAL
+  MENSAL
+  PERSONALIZADO
+}
+
+model Administracao {
+  id             String   @id @default(uuid())
+  administradoEm DateTime @default(now()) @map("administrado_em")
+  observacoes    String?
+
+  remedioId String  @map("remedio_id")
+  remedio   Remedio @relation(fields: [remedioId], references: [id], onDelete: Cascade)
+
+  membroId String @map("membro_id")
+  membro   Membro @relation(fields: [membroId], references: [id])
+
+  @@map("administracoes")
+}
+
+model Passeio {
+  id          String      @id @default(uuid())
+  duracaoMin  Int?        @map("duracao_min")
+  local       String?
+  observacoes String?
+  realizadoEm DateTime?  @map("realizado_em")
+  agendadoEm DateTime?   @map("agendado_em")
+  tipo        TipoPasseio @default(REALIZADO)
+  criadoEm   DateTime    @default(now()) @map("criado_em")
+
+  petId String @map("pet_id")
+  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  membroId String @map("membro_id")
+  membro   Membro @relation(fields: [membroId], references: [id])
+
+  @@map("passeios")
+}
+
+enum TipoPasseio {
+  REALIZADO
+  AGENDADO
+}
+
+model Cuidado {
+  id              String    @id @default(uuid())
+  tipo            String
+  frequenciaDias  Int       @map("frequencia_dias")
+  ultimaExecucao DateTime? @map("ultima_execucao")
+  proximaExecucao DateTime? @map("proxima_execucao")
+  ativo           Boolean   @default(true)
+  criadoEm       DateTime  @default(now()) @map("criado_em")
+
+  petId String @map("pet_id")
+  pet   Pet    @relation(fields: [petId], references: [id], onDelete: Cascade)
+
+  execucoes Execucao[]
+
+  @@map("cuidados")
+}
+
+model Execucao {
+  id          String   @id @default(uuid())
+  executadoEm DateTime @default(now()) @map("executado_em")
+  observacoes String?
+
+  cuidadoId String  @map("cuidado_id")
+  cuidado   Cuidado @relation(fields: [cuidadoId], references: [id], onDelete: Cascade)
+
+  membroId String @map("membro_id")
+  membro   Membro @relation(fields: [membroId], references: [id])
+
+  @@map("execucoes")
+}
+
+model Notificacao {
+  id        String          @id @default(uuid())
+  tipo      TipoNotificacao
+  titulo    String
+  mensagem  String
+  lida      Boolean         @default(false)
+  emoji     String?
+  criadaEm DateTime        @default(now()) @map("criada_em")
+
+  usuarioId String  @map("usuario_id")
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  familiaId String  @map("familia_id")
+  familia   Familia @relation(fields: [familiaId], references: [id], onDelete: Cascade)
+
+  @@map("notificacoes")
+}
+
+enum TipoNotificacao {
+  NOVO_REGISTRO
+  NOVO_CUIDADO
+  LEMBRETE
+  ATRASADO
+  NOVO_MEMBRO
+  PROMOVIDO
+}

@@ -1,0 +1,36 @@
+/* Onboarding Styles */
+:root {
+  --surface: #FAFAF9;
+  --card: #FFFFFF;
+  --border: #E4E4E7;
+  --border2: #D4D4D8;
+  --ink: #18181B;
+  --ink4: #71717A;
+  --amber: #EF9F27;
+  --r: 6px;
+  --r-lg: 12px;
+  --font-syne: 'Syne', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #0A0A0A;
+    --card: #18181B;
+    --border: #27272A;
+    --border2: #3F3F46;
+    --ink: #FAFAF9;
+    --ink4: #A1A1AA;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+  background: var(--surface);
+  color: var(--ink);
+}
