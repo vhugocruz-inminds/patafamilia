@@ -138,10 +138,7 @@ export default function SidebarClient({ usuario, familia, pets, naoLidas, childr
 
         {/* Footer */}
         <div style={{ marginTop: 'auto', padding: '14px 12px', borderTop: '1px solid rgba(255,255,255,.06)' }}>
-          <button
-            onClick={handleSignOut}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', borderRadius: '8px', background: 'transparent', border: 'none', cursor: 'pointer' }}
-          >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px' }}>
             <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: avatarBg, color: avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '11px', flexShrink: 0 }}>
               {getInitials(usuario.nome)}
             </div>
@@ -149,7 +146,14 @@ export default function SidebarClient({ usuario, familia, pets, naoLidas, childr
               <div style={{ fontSize: '13px', fontWeight: 600, color: '#fff' }}>{usuario.nome}</div>
               <div style={{ fontSize: '11px', color: 'rgba(255,255,255,.35)' }}>{usuario.papel === 'ADMIN' ? 'Admin' : 'Membro'}</div>
             </div>
-            <span style={{ color: 'rgba(255,255,255,.25)', fontSize: '14px' }}>↗</span>
+          </div>
+          <button
+            onClick={handleSignOut}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '7px 10px', marginTop: '8px', borderRadius: '8px', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.08)', cursor: 'pointer', color: 'rgba(255,255,255,.5)', fontSize: '12px', fontWeight: 600, fontFamily: 'inherit', transition: 'background .15s' }}
+            onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239,68,68,.15)', e.currentTarget.style.color = '#f87171')}
+            onMouseLeave={e => (e.currentTarget.style.background = 'rgba(255,255,255,.06)', e.currentTarget.style.color = 'rgba(255,255,255,.5)')}
+          >
+            Sair
           </button>
         </div>
       </aside>

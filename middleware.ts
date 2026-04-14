@@ -31,10 +31,10 @@ export async function middleware(request: NextRequest) {
   
   // Rotas públicas (acessíveis sem autenticação)
   const authRoutes = ['/login', '/cadastro', '/reset-senha']
-  const isPublicRoute = authRoutes.some((r) => pathname.startsWith(r)) || 
+  const isPublicRoute = authRoutes.some((r) => pathname.startsWith(r)) ||
                        pathname.startsWith('/api') ||
                        pathname.startsWith('/convite') ||
-                       pathname.match(/^\/$/)
+                       pathname === '/'
 
   // Se não está logado E tenta acessar rota protegida → login
   if (!user && !isPublicRoute) {

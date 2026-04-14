@@ -57,7 +57,7 @@ export default function OnboardingPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('Não autenticado')
 
-      const res = await fetch('/api/pets', {
+      const res = await fetch('/api/pet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nome: nomePet, especie: especiePet, emoji: emojiPet, usuarioId: user.id }),

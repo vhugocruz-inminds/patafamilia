@@ -16,7 +16,7 @@ export default function ConvitePage({ params }: { params: Promise<{ code: string
   useEffect(() => {
     fetch(`/api/familia/convite?codigo=${code}`)
       .then(r => r.json())
-      .then(d => setFamilia(d.nome || null))
+      .then(d => setFamilia(d.familia?.nome || d.nome || null))
   }, [code])
 
   async function handleAceitar() {

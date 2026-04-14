@@ -8,17 +8,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const { acao, nomeFamilia, codigo } = body
 
-    // Verificar autenticação
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
-    
+
     if (!user) {
       return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
     }
 
     const usuario = await prisma.usuario.findUnique({
       where: { id: user.id },
-      include: { membro: true }
+      include: { membro: true },
     })
 
     if (!usuario) {
@@ -29,15 +28,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Usuário já possui uma família' }, { status: 400 })
     }
 
+    // ── Criar família ──
     if (acao === 'criar') {
       if (!nomeFamilia) {
         return NextResponse.json({ error: 'Nome da família é obrigatório' }, { status: 400 })
       }
 
+      const codigoConvite = 'FAM-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+
       const familia = await prisma.familia.create({
-        data: {
-          nome: nomeFamilia
-        }
+        data: { nome: nomeFamilia, codigoConvite },
       })
 
       const membro = await prisma.membro.create({
@@ -45,41 +45,35 @@ export async function POST(req: NextRequest) {
           usuarioId: user.id,
           familiaId: familia.id,
           papel: PapelMembro.ADMIN,
-          entrado: new Date()
-        }
+        },
       })
 
       return NextResponse.json({ success: true, membro, familia })
     }
 
+    // ── Entrar em família via código de convite ──
     if (acao === 'entrar') {
       if (!codigo) {
         return NextResponse.json({ error: 'Código de convite é obrigatório' }, { status: 400 })
       }
 
-      const convite = await prisma.convite.findUnique({
-        where: { codigo },
-        include: { familia: true }
+      const familia = await prisma.familia.findUnique({
+        where: { codigoConvite: codigo },
       })
 
-      if (!convite) {
-        return NextResponse.json({ error: 'Convite não encontrado ou expirado' }, { status: 404 })
-      }
-
-      if (convite.expirado) {
-        return NextResponse.json({ error: 'Convite expirado' }, { status: 400 })
+      if (!familia) {
+        return NextResponse.json({ error: 'Código de convite inválido' }, { status: 404 })
       }
 
       const membro = await prisma.membro.create({
         data: {
           usuarioId: user.id,
-          familiaId: convite.familiaId,
+          familiaId: familia.id,
           papel: PapelMembro.MEMBRO,
-          entrado: new Date()
-        }
+        },
       })
 
-      return NextResponse.json({ success: true, membro, familia: convite.familia })
+      return NextResponse.json({ success: true, membro, familia })
     }
 
     return NextResponse.json({ error: 'Ação inválida' }, { status: 400 })
