@@ -29,12 +29,11 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl
   
-  // Rotas públicas
-  const authRoutes = ['/login', '/cadastro', '/reset-senha', '/convite']
-  const onboardingRoutes = ['/onboarding', '/onboarding-alt']
+  // Rotas públicas (acessíveis sem autenticação)
+  const authRoutes = ['/login', '/cadastro', '/reset-senha']
   const isPublicRoute = authRoutes.some((r) => pathname.startsWith(r)) || 
-                       onboardingRoutes.some((r) => pathname.startsWith(r)) ||
                        pathname.startsWith('/api') ||
+                       pathname.startsWith('/convite') ||
                        pathname.match(/^\/$/)
 
   // Se não está logado E tenta acessar rota protegida → login
