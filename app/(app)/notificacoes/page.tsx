@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatarDataHora } from '@/lib/utils'
 
@@ -18,7 +18,13 @@ export default function NotificacoesPage() {
   const [notifs, setNotifs] = useState<Notif[]>([])
   const [filtro, setFiltro] = useState<'todas' | 'nao_lidas' | 'NOVO_REGISTRO' | 'LEMBRETE' | 'ATRASADO'>('todas')
   const [loading, setLoading] = useState(true)
-  const supabase = createClient()
+  const [supabase] = useState(() => createClient())
+
+  const carregarNotificacoes = useEffectEvent(async () => {
+    const res = await fetch('/api/notificacoes')
+    if (res.ok) { const data = await res.json(); setNotifs(data) }
+    setLoading(false)
+  })
 
   useEffect(() => {
     carregarNotificacoes()
@@ -28,13 +34,7 @@ export default function NotificacoesPage() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notificacoes' }, () => carregarNotificacoes())
       .subscribe()
     return () => { supabase.removeChannel(channel) }
-  }, [])
-
-  async function carregarNotificacoes() {
-    const res = await fetch('/api/notificacoes')
-    if (res.ok) { const data = await res.json(); setNotifs(data) }
-    setLoading(false)
-  }
+  }, [supabase])
 
   async function marcarComoLida(id: string) {
     await fetch(`/api/notificacoes/${id}`, { method: 'PATCH' })
