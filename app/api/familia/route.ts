@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { gerarCodigoConvite } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/server'
 
 export async function POST(req: NextRequest) {
   try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
+    }
+
     const body = await req.json()
-    const { acao, usuarioId } = body
+    const { acao } = body
+    const usuarioId = user.id
 
     if (acao === 'criar') {
       const { nomeFamilia } = body

@@ -1,15 +1,16 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
 import { prisma } from '@/lib/prisma'
 import SidebarClient from '@/components/layout/SidebarClient'
+import { createClient } from '@/lib/supabase/server'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
   if (!user) redirect('/login')
 
-  // Garantir que o usuário existe no banco (criado pelo callback OAuth ou sign-up)
   await prisma.usuario.upsert({
     where: { id: user.id },
     update: {},
@@ -20,7 +21,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     },
   })
 
-  // Buscar usuário com família e pets
   const usuario = await prisma.usuario.findUnique({
     where: { id: user.id },
     include: {
@@ -30,11 +30,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             include: {
               pets: {
                 select: {
-                  id: true, nome: true, emoji: true,
+                  id: true,
+                  nome: true,
+                  emoji: true,
                   remedios: {
                     where: { ativo: true },
                     select: {
-                      id: true, frequencia: true, dataInicio: true,
+                      id: true,
+                      frequencia: true,
+                      dataInicio: true,
                       administracoes: {
                         orderBy: { administradoEm: 'desc' },
                         take: 1,
@@ -55,26 +59,34 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     },
   })
 
-  // Sem família → onboarding (fora do (app) group, sem loop)
-  if (!usuario?.membro) redirect('/onboarding')
+  if (!usuario?.membro) redirect('/perfil')
 
-  // Calcular badges de alerta por pet
   const agora = new Date()
-  const intervalos: Record<string, number> = { DIARIO: 1, SEMANAL: 7, QUINZENAL: 15, MENSAL: 30, PERSONALIZADO: 1 }
+  const intervalos: Record<string, number> = {
+    DIARIO: 1,
+    SEMANAL: 7,
+    QUINZENAL: 15,
+    MENSAL: 30,
+    PERSONALIZADO: 1,
+  }
 
   const pets = usuario.membro.familia.pets.map((pet) => {
     let alertas = 0
+
     for (const remedio of pet.remedios) {
       const ultima = remedio.administracoes[0]?.administradoEm ?? null
       const intervalo = intervalos[remedio.frequencia] ?? 1
       const proxima = ultima
         ? new Date(ultima.getTime() + intervalo * 86_400_000)
         : remedio.dataInicio
+
       if (proxima <= agora) alertas++
     }
+
     for (const cuidado of pet.cuidados) {
       if (cuidado.proximaExecucao && cuidado.proximaExecucao <= agora) alertas++
     }
+
     return { id: pet.id, nome: pet.nome, emoji: pet.emoji, alertas }
   })
 

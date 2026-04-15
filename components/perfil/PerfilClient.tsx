@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
@@ -54,10 +53,31 @@ function formatarDataCompleta(dataIso: string) {
 
 function getMensagemSaida(membro: NonNullable<Props['membro']>) {
   if (membro.papel === 'MEMBRO') {
-    return 'Ao sair, você perderá acesso à família e precisará de um novo convite para voltar. Deseja continuar?'
+    return 'Ao sair, voce perdera acesso a familia e precisara de um novo convite para voltar. Deseja continuar?'
   }
 
-  return 'Você é o único membro desta família. Ao sair, a família e todos os dados dela serão apagados permanentemente. Deseja continuar?'
+  return 'Voce e o unico membro desta familia. Ao sair, a familia e todos os dados dela serao apagados permanentemente. Deseja continuar?'
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  background: 'var(--surface)',
+  border: '1px solid var(--border2)',
+  borderRadius: '10px',
+  padding: '10px 12px',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+  color: 'var(--ink)',
+  outline: 'none',
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block',
+  fontSize: '11px',
+  fontWeight: 700,
+  color: 'var(--ink4)',
+  marginBottom: '6px',
+  letterSpacing: '.3px',
 }
 
 export default function PerfilClient({ usuario, membro }: Props) {
@@ -69,11 +89,14 @@ export default function PerfilClient({ usuario, membro }: Props) {
   const [apagandoConta, setApagandoConta] = useState(false)
   const [modalSucessorAberto, setModalSucessorAberto] = useState(false)
   const [sucessorSelecionadoId, setSucessorSelecionadoId] = useState('')
+  const [modoFamilia, setModoFamilia] = useState<'criar' | 'entrar'>('criar')
+  const [nomeFamilia, setNomeFamilia] = useState('')
+  const [codigoConvite, setCodigoConvite] = useState('')
+  const [salvandoFamilia, setSalvandoFamilia] = useState(false)
   const [avatarBg, avatarColor] = getAvatarColor(nome || usuario.nome)
 
   const nomeAlterado = nome.trim() !== usuario.nome
-  const outrosMembros =
-    membro?.familia.membros.filter((item) => item.email !== usuario.email) ?? []
+  const outrosMembros = membro?.familia.membros.filter((item) => item.email !== usuario.email) ?? []
 
   function abrirModalSucessor() {
     setSucessorSelecionadoId((atual) => atual || outrosMembros[0]?.id || '')
@@ -81,10 +104,7 @@ export default function PerfilClient({ usuario, membro }: Props) {
   }
 
   function fecharModalSucessor() {
-    if (saindoFamilia) {
-      return
-    }
-
+    if (saindoFamilia) return
     setModalSucessorAberto(false)
     setSucessorSelecionadoId('')
   }
@@ -93,7 +113,7 @@ export default function PerfilClient({ usuario, membro }: Props) {
     e.preventDefault()
 
     if (!nome.trim()) {
-      toast.error('Informe um nome válido.')
+      toast.error('Informe um nome valido.')
       return
     }
 
@@ -119,27 +139,62 @@ export default function PerfilClient({ usuario, membro }: Props) {
     }
   }
 
-  async function sairDaFamilia() {
-    if (!membro) {
+  async function salvarFamilia(e: React.FormEvent) {
+    e.preventDefault()
+
+    if (modoFamilia === 'criar' && !nomeFamilia.trim()) {
+      toast.error('Informe o nome da familia.')
       return
     }
+
+    if (modoFamilia === 'entrar' && !codigoConvite.trim()) {
+      toast.error('Informe o codigo de convite.')
+      return
+    }
+
+    setSalvandoFamilia(true)
+    try {
+      const res = await fetch('/api/familia', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          modoFamilia === 'criar'
+            ? { acao: 'criar', nomeFamilia: nomeFamilia.trim() }
+            : { acao: 'entrar', codigo: codigoConvite.trim().toUpperCase() }
+        ),
+      })
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Erro ao configurar familia')
+      }
+
+      setNomeFamilia('')
+      setCodigoConvite('')
+      toast.success(modoFamilia === 'criar' ? 'Familia criada com sucesso.' : 'Voce entrou na familia com sucesso.')
+      router.replace('/dashboard')
+      router.refresh()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao configurar familia')
+    } finally {
+      setSalvandoFamilia(false)
+    }
+  }
+
+  async function sairDaFamilia() {
+    if (!membro) return
 
     if (membro.papel === 'ADMIN' && membro.familia.totalMembros > 1) {
       abrirModalSucessor()
       return
     }
 
-    if (!window.confirm(getMensagemSaida(membro))) {
-      return
-    }
-
+    if (!window.confirm(getMensagemSaida(membro))) return
     await confirmarSaidaDaFamilia()
   }
 
   async function confirmarSaidaDaFamilia() {
-    if (!membro) {
-      return
-    }
+    if (!membro) return
 
     const body =
       membro.papel === 'ADMIN' && membro.familia.totalMembros > 1
@@ -156,30 +211,28 @@ export default function PerfilClient({ usuario, membro }: Props) {
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || 'Erro ao sair da família')
+        throw new Error(data.error || 'Erro ao sair da familia')
       }
 
       setModalSucessorAberto(false)
       setSucessorSelecionadoId('')
-      toast.success(data.message || 'Você saiu da família.')
+      toast.success(data.message || 'Voce saiu da familia.')
       router.replace('/perfil')
       router.refresh()
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Erro ao sair da família')
+      toast.error(error instanceof Error ? error.message : 'Erro ao sair da familia')
     } finally {
       setSaindoFamilia(false)
     }
   }
 
   async function apagarConta() {
-    if (membro) {
-      return
-    }
+    if (membro) return
 
-    const confirmacao = window.prompt('Digite APAGAR para confirmar a exclusão permanente da sua conta.')
+    const confirmacao = window.prompt('Digite APAGAR para confirmar a exclusao permanente da sua conta.')
 
     if (confirmacao !== 'APAGAR') {
-      toast.error('Confirmação inválida. Sua conta não foi apagada.')
+      toast.error('Confirmacao invalida. Sua conta nao foi apagada.')
       return
     }
 
@@ -205,29 +258,11 @@ export default function PerfilClient({ usuario, membro }: Props) {
   return (
     <>
       <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-syne)', fontSize: '22px', fontWeight: 800, color: 'var(--ink)' }}>Seu perfil</div>
-            <div style={{ fontSize: '13px', color: 'var(--ink3)', marginTop: '4px' }}>
-              Veja suas informações, acompanhe sua família e gerencie sua conta.
-            </div>
+        <div>
+          <div style={{ fontFamily: 'var(--font-syne)', fontSize: '22px', fontWeight: 800, color: 'var(--ink)' }}>Seu perfil</div>
+          <div style={{ fontSize: '13px', color: 'var(--ink3)', marginTop: '4px' }}>
+            Veja suas informacoes, acompanhe sua familia e gerencie sua conta.
           </div>
-          {!membro && (
-            <Link
-              href="/onboarding"
-              style={{
-                textDecoration: 'none',
-                background: 'var(--amber)',
-                color: '#412402',
-                borderRadius: '10px',
-                padding: '10px 14px',
-                fontSize: '13px',
-                fontWeight: 700,
-              }}
-            >
-              Criar ou entrar em uma família
-            </Link>
-          )}
         </div>
 
         <div
@@ -265,49 +300,15 @@ export default function PerfilClient({ usuario, membro }: Props) {
 
             <form onSubmit={salvarPerfil} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', marginBottom: '6px', letterSpacing: '.3px' }}>
-                  NOME
-                </label>
-                <input
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  placeholder="Seu nome"
-                  style={{
-                    width: '100%',
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border2)',
-                    borderRadius: '10px',
-                    padding: '10px 12px',
-                    fontSize: '14px',
-                    fontFamily: 'inherit',
-                    color: 'var(--ink)',
-                    outline: 'none',
-                  }}
-                />
+                <label style={labelStyle}>NOME</label>
+                <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Seu nome" style={inputStyle} />
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', marginBottom: '6px', letterSpacing: '.3px' }}>
-                  E-MAIL
-                </label>
-                <input
-                  value={usuario.email}
-                  readOnly
-                  style={{
-                    width: '100%',
-                    background: 'var(--surface)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '10px',
-                    padding: '10px 12px',
-                    fontSize: '14px',
-                    fontFamily: 'inherit',
-                    color: 'var(--ink3)',
-                    outline: 'none',
-                    opacity: 0.85,
-                  }}
-                />
+                <label style={labelStyle}>E-MAIL</label>
+                <input value={usuario.email} readOnly style={{ ...inputStyle, border: '1px solid var(--border)', color: 'var(--ink3)', opacity: 0.85 }} />
                 <div style={{ fontSize: '11px', color: 'var(--ink4)', marginTop: '6px' }}>
-                  O e-mail fica somente para visualização nesta versão.
+                  O e-mail fica somente para visualizacao nesta versao.
                 </div>
               </div>
 
@@ -328,7 +329,7 @@ export default function PerfilClient({ usuario, membro }: Props) {
                     opacity: salvando ? 0.8 : 1,
                   }}
                 >
-                  {salvando ? 'Salvando...' : 'Salvar alterações'}
+                  {salvando ? 'Salvando...' : 'Salvar alteracoes'}
                 </button>
               </div>
             </form>
@@ -337,14 +338,14 @@ export default function PerfilClient({ usuario, membro }: Props) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', padding: '24px' }}>
               <div style={{ fontFamily: 'var(--font-syne)', fontSize: '16px', fontWeight: 700, color: 'var(--ink)', marginBottom: '16px' }}>
-                Família
+                Familia
               </div>
 
               {membro ? (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '18px' }}>
                     {[
-                      { label: 'Família atual', value: membro.familia.nome },
+                      { label: 'Familia atual', value: membro.familia.nome },
                       { label: 'Seu papel', value: membro.papel === 'ADMIN' ? 'Admin' : 'Membro' },
                       { label: 'Entrada', value: formatarDataCompleta(membro.entradaEm) },
                       { label: 'Membros', value: `${membro.familia.totalMembros} pessoa${membro.familia.totalMembros > 1 ? 's' : ''}` },
@@ -359,7 +360,7 @@ export default function PerfilClient({ usuario, membro }: Props) {
                   </div>
 
                   <div style={{ background: 'var(--amber-50)', border: '1px solid #F6D699', borderRadius: '12px', padding: '14px', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--amber-800)', marginBottom: '4px' }}>Código de convite</div>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--amber-800)', marginBottom: '4px' }}>Codigo de convite</div>
                     <div style={{ fontSize: '15px', fontWeight: 800, color: 'var(--ink)', letterSpacing: '2px' }}>{membro.familia.codigoConvite}</div>
                   </div>
 
@@ -380,22 +381,86 @@ export default function PerfilClient({ usuario, membro }: Props) {
                       cursor: saindoFamilia ? 'wait' : 'pointer',
                     }}
                   >
-                    {saindoFamilia ? 'Saindo da família...' : 'Sair da família'}
+                    {saindoFamilia ? 'Saindo da familia...' : 'Sair da familia'}
                   </button>
 
                   {membro.papel === 'ADMIN' && membro.familia.totalMembros > 1 && (
                     <div style={{ fontSize: '11px', color: 'var(--ink4)', marginTop: '10px' }}>
-                      Você vai escolher quem assume como admin antes de sair.
+                      Voce vai escolher quem assume como admin antes de sair.
                     </div>
                   )}
                 </>
               ) : (
-                <div style={{ background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', padding: '16px' }}>
-                  <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ink)', marginBottom: '6px' }}>Você está sem família no momento.</div>
-                  <div style={{ fontSize: '12px', color: 'var(--ink4)' }}>
-                    Quando quiser, você pode criar uma nova família ou entrar em outra usando um código de convite.
+                <>
+                  <div style={{ background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', padding: '16px', marginBottom: '16px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ink)', marginBottom: '6px' }}>Voce esta sem familia no momento.</div>
+                    <div style={{ fontSize: '12px', color: 'var(--ink4)' }}>
+                      Use esta area para criar uma nova familia ou entrar em outra com um codigo de convite.
+                    </div>
                   </div>
-                </div>
+
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                    {(['criar', 'entrar'] as const).map((modo) => (
+                      <button
+                        key={modo}
+                        type="button"
+                        onClick={() => setModoFamilia(modo)}
+                        style={{
+                          flex: 1,
+                          padding: '8px 10px',
+                          borderRadius: '10px',
+                          border: `1px solid ${modoFamilia === modo ? 'var(--amber)' : 'var(--border)'}`,
+                          background: modoFamilia === modo ? 'var(--amber-50)' : 'var(--card)',
+                          color: modoFamilia === modo ? 'var(--amber-800)' : 'var(--ink3)',
+                          fontFamily: 'inherit',
+                          fontWeight: 700,
+                          fontSize: '13px',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {modo === 'criar' ? 'Criar familia' : 'Entrar por convite'}
+                      </button>
+                    ))}
+                  </div>
+
+                  <form onSubmit={salvarFamilia} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {modoFamilia === 'criar' ? (
+                      <div>
+                        <label style={labelStyle}>NOME DA FAMILIA</label>
+                        <input value={nomeFamilia} onChange={(e) => setNomeFamilia(e.target.value)} placeholder="Ex: Familia Costa" style={inputStyle} />
+                      </div>
+                    ) : (
+                      <div>
+                        <label style={labelStyle}>CODIGO DE CONVITE</label>
+                        <input value={codigoConvite} onChange={(e) => setCodigoConvite(e.target.value.toUpperCase())} placeholder="Ex: ABCD1234" style={{ ...inputStyle, letterSpacing: '2px', fontWeight: 700 }} />
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={salvandoFamilia}
+                      style={{
+                        width: '100%',
+                        background: 'var(--amber)',
+                        color: '#412402',
+                        border: 'none',
+                        borderRadius: '10px',
+                        padding: '11px 14px',
+                        fontSize: '13px',
+                        fontWeight: 800,
+                        fontFamily: 'inherit',
+                        cursor: salvandoFamilia ? 'wait' : 'pointer',
+                        opacity: salvandoFamilia ? 0.8 : 1,
+                      }}
+                    >
+                      {salvandoFamilia
+                        ? 'Salvando...'
+                        : modoFamilia === 'criar'
+                          ? 'Criar familia'
+                          : 'Entrar na familia'}
+                    </button>
+                  </form>
+                </>
               )}
             </div>
 
@@ -404,7 +469,7 @@ export default function PerfilClient({ usuario, membro }: Props) {
                 Conta
               </div>
               <div style={{ fontSize: '12px', color: 'var(--ink4)', marginBottom: '18px', lineHeight: 1.6 }}>
-                Apagar a conta remove seu acesso permanentemente. Antes disso, você precisa sair da sua família atual.
+                Apagar a conta remove seu acesso permanentemente. Antes disso, voce precisa sair da sua familia atual.
               </div>
 
               <button
@@ -430,7 +495,7 @@ export default function PerfilClient({ usuario, membro }: Props) {
 
               {membro && (
                 <div style={{ fontSize: '11px', color: 'var(--ink4)', marginTop: '10px' }}>
-                  Saia da família primeiro para liberar essa ação.
+                  Saia da familia primeiro para liberar esta acao.
                 </div>
               )}
             </div>
@@ -465,10 +530,10 @@ export default function PerfilClient({ usuario, membro }: Props) {
             }}
           >
             <div style={{ fontFamily: 'var(--font-syne)', fontSize: '18px', fontWeight: 700, color: 'var(--ink)', marginBottom: '8px' }}>
-              Escolha o próximo admin
+              Escolha o proximo admin
             </div>
             <div style={{ fontSize: '13px', color: 'var(--ink3)', lineHeight: 1.6, marginBottom: '18px' }}>
-              Antes de sair da família, escolha qual membro vai assumir a administração.
+              Antes de sair da familia, escolha qual membro vai assumir a administracao.
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '18px' }}>
@@ -514,23 +579,16 @@ export default function PerfilClient({ usuario, membro }: Props) {
                       <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ink)' }}>{item.nome}</div>
                       <div style={{ fontSize: '12px', color: 'var(--ink4)' }}>{item.email}</div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {item.papel === 'ADMIN' && (
-                        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--amber-800)', background: 'var(--amber-50)', borderRadius: '999px', padding: '4px 8px' }}>
-                          Já é admin
-                        </span>
-                      )}
-                      <span
-                        style={{
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '50%',
-                          border: `2px solid ${selecionado ? 'var(--amber)' : 'var(--border2)'}`,
-                          background: selecionado ? 'var(--amber)' : 'transparent',
-                          flexShrink: 0,
-                        }}
-                      />
-                    </div>
+                    <span
+                      style={{
+                        width: '18px',
+                        height: '18px',
+                        borderRadius: '50%',
+                        border: `2px solid ${selecionado ? 'var(--amber)' : 'var(--border2)'}`,
+                        background: selecionado ? 'var(--amber)' : 'transparent',
+                        flexShrink: 0,
+                      }}
+                    />
                   </button>
                 )
               })}
