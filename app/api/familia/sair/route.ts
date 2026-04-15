@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
     const supabase = await createClient()
     const {
@@ -12,6 +12,10 @@ export async function POST() {
     if (!user) {
       return NextResponse.json({ error: 'Não autenticado' }, { status: 401 })
     }
+
+    const body = await req.json().catch(() => ({}))
+    const sucessorMembroId =
+      typeof body?.sucessorMembroId === 'string' ? body.sucessorMembroId : null
 
     const membroAtual = await prisma.membro.findUnique({
       where: { usuarioId: user.id },
@@ -47,37 +51,49 @@ export async function POST() {
       })
     }
 
+    let sucessorEscolhido = null
+
+    if (membroAtual.papel === 'ADMIN' && outrosMembros.length > 0) {
+      if (!sucessorMembroId) {
+        return NextResponse.json(
+          { error: 'Escolha quem será o próximo admin antes de sair.' },
+          { status: 400 }
+        )
+      }
+
+      sucessorEscolhido = outrosMembros.find((membro) => membro.id === sucessorMembroId) ?? null
+
+      if (!sucessorEscolhido) {
+        return NextResponse.json(
+          { error: 'O membro escolhido não pertence à sua família.' },
+          { status: 400 }
+        )
+      }
+    }
+
     let promotedMemberName: string | null = null
 
     await prisma.$transaction(async (tx) => {
-      if (membroAtual.papel === 'ADMIN') {
-        const existeOutroAdmin = outrosMembros.some((membro) => membro.papel === 'ADMIN')
-
-        if (!existeOutroAdmin) {
-          const membroPromovido = outrosMembros[0]
-
-          if (!membroPromovido) {
-            throw new Error('Não foi possível encontrar outro membro para promover.')
-          }
-
+      if (membroAtual.papel === 'ADMIN' && sucessorEscolhido) {
+        if (sucessorEscolhido.papel !== 'ADMIN') {
           await tx.membro.update({
-            where: { id: membroPromovido.id },
+            where: { id: sucessorEscolhido.id },
             data: { papel: 'ADMIN' },
           })
-
-          await tx.notificacao.create({
-            data: {
-              usuarioId: membroPromovido.usuarioId,
-              familiaId: membroAtual.familiaId,
-              tipo: 'PROMOVIDO',
-              titulo: 'Você agora é admin',
-              mensagem: `**${membroAtual.usuario.nome}** saiu da **${membroAtual.familia.nome}** e você assumiu a administração da família.`,
-              emoji: '👑',
-            },
-          })
-
-          promotedMemberName = membroPromovido.usuario.nome
         }
+
+        await tx.notificacao.create({
+          data: {
+            usuarioId: sucessorEscolhido.usuarioId,
+            familiaId: membroAtual.familiaId,
+            tipo: 'PROMOVIDO',
+            titulo: 'Você agora é admin',
+            mensagem: `**${membroAtual.usuario.nome}** saiu da **${membroAtual.familia.nome}** e você assumiu a administração da família.`,
+            emoji: '👑',
+          },
+        })
+
+        promotedMemberName = sucessorEscolhido.usuario.nome
       }
 
       await tx.membro.delete({

@@ -133,6 +133,13 @@ export default async function PerfilPage() {
                   nome: usuario.membro.familia.nome,
                   codigoConvite: usuario.membro.familia.codigoConvite,
                   totalMembros: usuario.membro.familia.membros.length,
+                  membros: usuario.membro.familia.membros.map((membro) => ({
+                    id: membro.id,
+                    usuarioId: membro.usuarioId,
+                    nome: membro.usuario.nome,
+                    email: membro.usuario.email,
+                    papel: membro.papel,
+                  })),
                 },
               }
             : null
