@@ -1415,7 +1415,7 @@ export default function PetProfileClient({
   const value: React.CSSProperties = { fontSize: '14px', fontWeight: 600, color: 'var(--ink)' }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '780px' }}>
+    <div style={{ width: '100%', maxWidth: '780px', margin: '0 auto', padding: '24px', boxSizing: 'border-box' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '24px' }}>
         <a href="/dashboard" style={{ color: 'var(--ink3)', textDecoration: 'none', fontSize: '20px', flexShrink: 0 }}>←</a>

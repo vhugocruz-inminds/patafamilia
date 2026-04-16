@@ -137,7 +137,7 @@ export default function NovoPetPage() {
   const sectionCard: React.CSSProperties = { background: 'var(--card)', borderRadius: 'var(--r-lg)', border: '1px solid var(--border)', padding: '20px', marginBottom: '12px' }
 
   return (
-    <div style={{ padding: '24px', maxWidth: '560px' }}>
+    <div style={{ width: '100%', maxWidth: '560px', margin: '0 auto', padding: '24px', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
         <Link href="/dashboard" style={{ color: 'var(--ink3)', textDecoration: 'none', fontSize: '20px' }}>←</Link>
         <div>
