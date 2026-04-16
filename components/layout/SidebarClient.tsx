@@ -41,7 +41,7 @@ function getAvatarColor(nome: string): [string, string] {
 }
 
 function getPapelLabel(papel: PapelMembro | null) {
-  if (papel === 'ADMIN') return 'Admin da familia'
+  if (papel === 'ADMIN') return 'Admin da família'
   if (papel === 'MEMBRO') return 'Membro da familia'
   return 'Sem familia'
 }
@@ -112,24 +112,24 @@ export default function SidebarClient({ usuario, familia, pets, naoLidas, childr
             </div>
           </div>
 
-          <SidebarSection label="Navegacao">
+          <SidebarSection label="Navegação">
             <SidebarItem
               href="/dashboard"
               icon={<HouseIcon size={16} strokeWidth={2.1} />}
-              label="Inicio"
+              label="Início"
               active={isActive('/dashboard')}
             />
             <SidebarItem
               href="/notificacoes"
               icon={<BellIcon size={16} strokeWidth={2.1} />}
-              label="Notificacoes"
+              label="Notificações"
               active={isActive('/notificacoes')}
               badge={badgeNaoLidas}
             />
             <SidebarItem
               href="/familia"
               icon={<UsersIcon size={16} strokeWidth={2.1} />}
-              label="Familia"
+              label="Família"
               active={isActive('/familia')}
             />
           </SidebarSection>
