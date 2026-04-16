@@ -40,8 +40,13 @@ export function calcularStatusRemedio(
   const intervalo = INTERVALOS_DIAS[frequencia] ?? 1
 
   if (!ultimaAdministracao) {
-    if (dataInicio <= agora) return 'ATRASADO'
-    const diffDias = (dataInicio.getTime() - agora.getTime()) / (1000 * 60 * 60 * 24)
+    // Comparar só pelo dia (sem hora) para evitar ATRASADO no próprio dia de início
+    const hojeInicio = new Date(agora)
+    hojeInicio.setHours(0, 0, 0, 0)
+    const dataInicioNorm = new Date(dataInicio)
+    dataInicioNorm.setHours(0, 0, 0, 0)
+    if (dataInicioNorm < hojeInicio) return 'ATRASADO'
+    const diffDias = (dataInicioNorm.getTime() - hojeInicio.getTime()) / (1000 * 60 * 60 * 24)
     return diffDias <= 7 ? 'EM_BREVE' : 'EM_DIA'
   }
 
@@ -58,8 +63,13 @@ export function calcularStatusCuidado(
 ): 'EM_DIA' | 'EM_BREVE' | 'ATRASADO' {
   if (!proximaExecucao) return 'ATRASADO'
   const agora = new Date()
-  const diffDias = (proximaExecucao.getTime() - agora.getTime()) / (1000 * 60 * 60 * 24)
-  if (diffDias < 0) return 'ATRASADO'
+  // Comparar pelo dia normalizado: cuidado agendado para hoje não é ATRASADO
+  const hojeInicio = new Date(agora)
+  hojeInicio.setHours(0, 0, 0, 0)
+  const proximaNorm = new Date(proximaExecucao)
+  proximaNorm.setHours(0, 0, 0, 0)
+  if (proximaNorm < hojeInicio) return 'ATRASADO'
+  const diffDias = (proximaNorm.getTime() - hojeInicio.getTime()) / (1000 * 60 * 60 * 24)
   if (diffDias <= 7) return 'EM_BREVE'
   return 'EM_DIA'
 }

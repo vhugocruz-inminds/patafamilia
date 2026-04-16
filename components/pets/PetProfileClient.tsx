@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
-import { calcularStatusRemedio, calcularStatusCuidado } from '@/lib/utils'
+// calcularStatusRemedio/Cuidado from utils used only in layout — local display functions used here
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -72,17 +72,19 @@ interface Props {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-type StatusBadge = 'EM_DIA' | 'EM_BREVE' | 'ATRASADO'
+type StatusBadge = 'EM_DIA' | 'EM_BREVE' | 'QUASE' | 'ATRASADO'
 
 const STATUS_LABEL: Record<StatusBadge, string> = {
-  EM_DIA: 'Em dia',
+  EM_DIA:   'Em dia',
   EM_BREVE: 'Em breve',
+  QUASE:    'Quase na hora',
   ATRASADO: 'Atrasado',
 }
 const STATUS_COLOR: Record<StatusBadge, { bg: string; text: string }> = {
-  EM_DIA:    { bg: 'var(--teal-50)',   text: 'var(--teal-800)' },
-  EM_BREVE:  { bg: '#FEF3C7',          text: '#92400E' },
-  ATRASADO:  { bg: 'var(--coral-50)',  text: 'var(--coral)' },
+  EM_DIA:   { bg: 'var(--teal-50)',  text: 'var(--teal-800)' },
+  EM_BREVE: { bg: '#FEF3C7',         text: '#92400E' },
+  QUASE:    { bg: '#FFF7ED',         text: '#C2410C' },
+  ATRASADO: { bg: 'var(--coral-50)', text: 'var(--coral)' },
 }
 
 function fmt(d: string | null) {
@@ -102,6 +104,204 @@ const FREQ_OPTIONS = [
   { value: 'MENSAL',       label: 'Mensal' },
   { value: 'PERSONALIZADO',label: 'Personalizado' },
 ]
+
+// ─── Dose helpers ──────────────────────────────────────────────────────────────
+
+type DoseInfo = { quantidade: number; horarios: string[] }
+
+function parseDose(dose: string): DoseInfo | null {
+  try {
+    const p = JSON.parse(dose)
+    if (typeof p.quantidade === 'number' && Array.isArray(p.horarios)) return p
+  } catch { /* legacy text */ }
+  return null
+}
+
+function formatDoseLabel(dose: string): string {
+  const info = parseDose(dose)
+  if (!info) return dose // legacy text como "1 comprimido"
+  const s = info.quantidade === 1 ? 'dose' : 'doses'
+  return `${info.quantidade} ${s}/período · ${info.horarios.join(', ')}`
+}
+
+const INTERVALOS_DIAS_CLIENT: Record<string, number> = {
+  DIARIO: 1, SEMANAL: 7, QUINZENAL: 15, MENSAL: 30, PERSONALIZADO: 1,
+}
+
+function calcularProximaDoseStr(r: Remedio): string {
+  const agora = new Date()
+  const doseInfo = parseDose(r.dose)
+  const ultima = r.administracoes[0]?.administradoEm ?? null
+  const dataInicio = new Date(r.dataInicio)
+
+  // Com horários definidos + frequência DIÁRIA → tracking intradiário
+  if (doseInfo && doseInfo.horarios.length > 0 && r.frequencia === 'DIARIO') {
+    const hojeInicio = new Date(agora)
+    hojeInicio.setHours(0, 0, 0, 0)
+    const admHoje = r.administracoes.filter(a => new Date(a.administradoEm) >= hojeInicio).length
+    const dosesRestantes = doseInfo.quantidade - admHoje
+
+    if (dosesRestantes > 0) {
+      for (const h of doseInfo.horarios) {
+        const [hh, mm] = h.split(':').map(Number)
+        const slot = new Date(agora)
+        slot.setHours(hh, mm, 0, 0)
+        if (slot > agora) return `Hoje às ${h}`
+      }
+    }
+    // Todos os slots de hoje foram tomados ou passaram
+    const amanha = new Date(hojeInicio)
+    amanha.setDate(amanha.getDate() + 1)
+    return `Amanhã às ${doseInfo.horarios[0]}`
+  }
+
+  // Sem horários definidos → cálculo simples por intervalo
+  const intervalo = INTERVALOS_DIAS_CLIENT[r.frequencia] ?? 1
+  let proxima: Date
+  if (!ultima) {
+    proxima = dataInicio
+  } else {
+    proxima = new Date(new Date(ultima).getTime() + intervalo * 86_400_000)
+  }
+
+  const hoje = new Date(agora)
+  hoje.setHours(0, 0, 0, 0)
+  const amanha = new Date(hoje)
+  amanha.setDate(amanha.getDate() + 1)
+  const proximaNorm = new Date(proxima)
+  proximaNorm.setHours(0, 0, 0, 0)
+
+  if (proximaNorm < hoje) return 'Atrasado'
+  if (proximaNorm.getTime() === hoje.getTime()) return 'Hoje'
+  if (proximaNorm.getTime() === amanha.getTime()) return 'Amanhã'
+  return fmt(proxima.toISOString())
+}
+
+function calcularDosesHoje(r: Remedio): { tomadas: number; total: number } | null {
+  const info = parseDose(r.dose)
+  if (!info || r.frequencia !== 'DIARIO') return null
+  const hojeInicio = new Date()
+  hojeInicio.setHours(0, 0, 0, 0)
+  const tomadas = r.administracoes.filter(a => new Date(a.administradoEm) >= hojeInicio).length
+  return { tomadas, total: info.quantidade }
+}
+
+type DetalheSlots = {
+  atrasadas: number
+  quase: number
+  emBreve: number
+  feitas: number
+} | null
+
+// Quebra os slots do dia em categorias para mostrar badges granulares
+function calcularDetalheSlots(r: Remedio): DetalheSlots {
+  const info = parseDose(r.dose)
+  if (!info || info.horarios.length === 0 || r.frequencia !== 'DIARIO') return null
+
+  const agora = new Date()
+  const hojeInicio = new Date(agora)
+  hojeInicio.setHours(0, 0, 0, 0)
+  const admHoje = r.administracoes.filter(a => new Date(a.administradoEm) >= hojeInicio).length
+
+  let slotsPassados = 0
+  let slotsQuase = 0
+  let slotsFuturos = 0
+
+  for (const h of info.horarios) {
+    const [hh, mm] = h.split(':').map(Number)
+    const slot = new Date(agora)
+    slot.setHours(hh, mm, 0, 0)
+    const diffMin = (slot.getTime() - agora.getTime()) / 60_000
+    if (slot.getTime() + 15 * 60_000 < agora.getTime()) {
+      slotsPassados++
+    } else if (diffMin >= 0 && diffMin <= 60) {
+      slotsQuase++
+    } else {
+      slotsFuturos++
+    }
+  }
+
+  // Administrações cobrem slots passados primeiro; excedente cobre slots futuros
+  const feitas = Math.min(admHoje, info.quantidade)
+  const atrasadas = Math.max(0, slotsPassados - admHoje)
+  const sobra = Math.max(0, admHoje - slotsPassados) // adm antecipadas
+  const quase = Math.max(0, slotsQuase - sobra)
+  const emBreve = Math.max(0, slotsFuturos - Math.max(0, sobra - slotsQuase))
+
+  return { atrasadas, quase, emBreve, feitas }
+}
+
+// Calcula status visual para remédio — considera horários de dose e QUASE
+function calcularStatusRemedioDisplay(r: Remedio): StatusBadge {
+  const agora = new Date()
+  const doseInfo = parseDose(r.dose)
+
+  // ── Remédio diário com horários definidos ──────────────────────────────────
+  if (doseInfo && doseInfo.horarios.length > 0 && r.frequencia === 'DIARIO') {
+    const hojeInicio = new Date(agora)
+    hojeInicio.setHours(0, 0, 0, 0)
+    const admHoje = r.administracoes.filter(a => new Date(a.administradoEm) >= hojeInicio).length
+
+    // Slots que já passaram do horário + 15min de buffer
+    const slotsPassados = doseInfo.horarios.filter(h => {
+      const [hh, mm] = h.split(':').map(Number)
+      const slot = new Date(agora)
+      slot.setHours(hh, mm, 0, 0)
+      return slot.getTime() + 15 * 60_000 < agora.getTime()
+    }).length
+
+    if (admHoje < slotsPassados) return 'ATRASADO'
+
+    // Próximo slot ainda não passou — verificar se está chegando (≤60min)
+    for (const h of doseInfo.horarios) {
+      const [hh, mm] = h.split(':').map(Number)
+      const slot = new Date(agora)
+      slot.setHours(hh, mm, 0, 0)
+      const diffMin = (slot.getTime() - agora.getTime()) / 60_000
+      if (diffMin >= 0 && diffMin <= 60) return 'QUASE'
+    }
+
+    // Todas as doses de hoje administradas ou slots todos passados e em dia
+    if (admHoje >= doseInfo.quantidade) return 'EM_DIA'
+    return 'EM_BREVE'
+  }
+
+  // ── Frequências por intervalo de dias ──────────────────────────────────────
+  const intervalo = INTERVALOS_DIAS_CLIENT[r.frequencia] ?? 1
+  const ultima = r.administracoes[0]?.administradoEm ?? null
+  let proxima: Date
+  if (!ultima) {
+    // Nunca administrado — comparar só por dia, não por hora
+    const dataInicio = new Date(r.dataInicio)
+    const hojeInicio = new Date(agora)
+    hojeInicio.setHours(0, 0, 0, 0)
+    const dataInicioNorm = new Date(dataInicio)
+    dataInicioNorm.setHours(0, 0, 0, 0)
+    if (dataInicioNorm < hojeInicio) return 'ATRASADO'
+    const diffDias = (dataInicioNorm.getTime() - hojeInicio.getTime()) / 86_400_000
+    if (diffDias === 0) return 'QUASE'
+    if (diffDias <= 7) return 'EM_BREVE'
+    return 'EM_DIA'
+  }
+  proxima = new Date(new Date(ultima).getTime() + intervalo * 86_400_000)
+  const diffDias = (proxima.getTime() - agora.getTime()) / 86_400_000
+  if (diffDias < 0) return 'ATRASADO'
+  if (diffDias <= 1) return 'QUASE'
+  if (diffDias <= 7) return 'EM_BREVE'
+  return 'EM_DIA'
+}
+
+// Calcula status visual para cuidado — QUASE se nas próximas 24h
+function calcularStatusCuidadoDisplay(c: Cuidado): StatusBadge {
+  if (!c.proximaExecucao) return 'ATRASADO'
+  const agora = new Date()
+  const proxima = new Date(c.proximaExecucao)
+  const diffDias = (proxima.getTime() - agora.getTime()) / 86_400_000
+  if (diffDias < 0) return 'ATRASADO'
+  if (diffDias <= 1) return 'QUASE'
+  if (diffDias <= 7) return 'EM_BREVE'
+  return 'EM_DIA'
+}
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
@@ -274,6 +474,24 @@ function EditPetModal({
 
 // ─── Add Remédio Form ─────────────────────────────────────────────────────────
 
+function gerarHorariosDefault(n: number): string[] {
+  // Distribui os horários de forma equilibrada ao longo do dia
+  const slots: string[] = []
+  if (n === 1) return ['08:00']
+  if (n === 2) return ['08:00', '20:00']
+  if (n === 3) return ['08:00', '14:00', '20:00']
+  if (n === 4) return ['08:00', '12:00', '16:00', '20:00']
+  // Para n > 4, distribui de 6h a 22h
+  const inicio = 6
+  const fim = 22
+  const passo = Math.floor((fim - inicio) / (n - 1))
+  for (let i = 0; i < n; i++) {
+    const h = inicio + i * passo
+    slots.push(`${String(h).padStart(2, '0')}:00`)
+  }
+  return slots
+}
+
 function AddRemedioForm({
   petId, membroId, onAdded, onCancel,
 }: {
@@ -281,51 +499,111 @@ function AddRemedioForm({
   onAdded: (r: Remedio) => void; onCancel: () => void
 }) {
   const [nome, setNome] = useState('')
-  const [dose, setDose] = useState('')
+  const [numeroDoses, setNumeroDoses] = useState(1)
+  const [horarios, setHorarios] = useState<string[]>(['08:00'])
   const [frequencia, setFrequencia] = useState('DIARIO')
   const [dataInicio, setDataInicio] = useState(new Date().toISOString().split('T')[0])
   const [loading, setLoading] = useState(false)
 
+  function handleNumeroDoses(n: number) {
+    const clamped = Math.max(1, Math.min(12, n))
+    setNumeroDoses(clamped)
+    // Ajusta os horários: mantém os existentes e completa/remove conforme necessário
+    setHorarios(prev => {
+      if (prev.length === clamped) return prev
+      if (clamped > prev.length) {
+        return gerarHorariosDefault(clamped)
+      }
+      return prev.slice(0, clamped)
+    })
+  }
+
+  function updateHorario(idx: number, value: string) {
+    setHorarios(prev => prev.map((h, i) => i === idx ? value : h))
+  }
+
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
+    if (horarios.some(h => !h)) { toast.error('Preencha todos os horários.'); return }
     setLoading(true)
+    // Armazena dose como JSON estruturado
+    const doseJson = JSON.stringify({ quantidade: numeroDoses, horarios })
     const res = await fetch(`/api/pets/${petId}/remedios`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome, dose, frequencia, dataInicio, membroId }),
+      body: JSON.stringify({ nome, dose: doseJson, frequencia, dataInicio, membroId }),
     })
     setLoading(false)
-    if (!res.ok) { toast.error('Erro ao salvar remédio.'); return }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      toast.error(err.error ?? 'Erro ao salvar remédio.')
+      return
+    }
     const r = await res.json()
     toast.success('Remédio adicionado!')
     onAdded({ ...r, administracoes: [], dataFim: null })
   }
 
+  const lbl: React.CSSProperties = { fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', display: 'block', marginBottom: '4px', letterSpacing: '.3px' }
+
   return (
-    <form onSubmit={salvar} style={{ ...card, background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)', marginBottom: '2px' }}>Novo remédio</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-        <div>
-          <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', display: 'block', marginBottom: '4px' }}>NOME</label>
-          <input required value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Vermífugo" style={inputStyle} />
+    <form onSubmit={salvar} style={{ ...card, background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)' }}>Novo remédio</div>
+
+      {/* Nome */}
+      <div>
+        <label style={lbl}>NOME DO REMÉDIO</label>
+        <input required value={nome} onChange={e => setNome(e.target.value)} placeholder="Ex: Drontal Plus" style={inputStyle} />
+      </div>
+
+      {/* Doses por período + horários dinâmicos */}
+      <div>
+        <label style={lbl}>DOSES POR PERÍODO</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+          <button type="button" onClick={() => handleNumeroDoses(numeroDoses - 1)}
+            style={{ ...btnGhost, width: '32px', height: '32px', padding: 0, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+          <input
+            type="number" min="1" max="12" required
+            value={numeroDoses}
+            onChange={e => handleNumeroDoses(Number(e.target.value))}
+            style={{ ...inputStyle, width: '60px', textAlign: 'center', padding: '8px 4px' }}
+          />
+          <button type="button" onClick={() => handleNumeroDoses(numeroDoses + 1)}
+            style={{ ...btnGhost, width: '32px', height: '32px', padding: 0, fontSize: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+          <span style={{ fontSize: '12px', color: 'var(--ink4)' }}>{numeroDoses === 1 ? 'dose' : 'doses'} por período</span>
         </div>
-        <div>
-          <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', display: 'block', marginBottom: '4px' }}>DOSE</label>
-          <input required value={dose} onChange={e => setDose(e.target.value)} placeholder="Ex: 1 comprimido" style={inputStyle} />
+
+        {/* Horários dinâmicos */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          {horarios.map((h, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--ink3)', minWidth: '52px', fontWeight: 600 }}>
+                Dose {i + 1}
+              </span>
+              <input
+                type="time" required value={h}
+                onChange={e => updateHorario(i, e.target.value)}
+                style={{ ...inputStyle, width: '120px' }}
+              />
+            </div>
+          ))}
         </div>
       </div>
+
+      {/* Frequência + Data início */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
         <div>
-          <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', display: 'block', marginBottom: '4px' }}>FREQUÊNCIA</label>
+          <label style={lbl}>FREQUÊNCIA</label>
           <select required value={frequencia} onChange={e => setFrequencia(e.target.value)} style={inputStyle}>
             {FREQ_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
           </select>
         </div>
         <div>
-          <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', display: 'block', marginBottom: '4px' }}>INÍCIO</label>
+          <label style={lbl}>DATA DE INÍCIO</label>
           <input required type="date" value={dataInicio} onChange={e => setDataInicio(e.target.value)} style={inputStyle} />
         </div>
       </div>
+
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
         <button type="button" onClick={onCancel} style={btnGhost}>Cancelar</button>
         <button type="submit" disabled={loading} style={{ ...btnPrimary, opacity: loading ? 0.7 : 1 }}>
@@ -553,8 +831,11 @@ function RemediosTab({
 
       {remedios.map(r => {
         const ultima = r.administracoes[0]?.administradoEm ?? null
-        const status = calcularStatusRemedio(r.frequencia, ultima ? new Date(ultima) : null, new Date(r.dataInicio)) as StatusBadge
+        const status = calcularStatusRemedioDisplay(r)
         const isExpanded = expandido === r.id
+        const proximaStr = calcularProximaDoseStr(r)
+        const detalhe = calcularDetalheSlots(r)
+        const dosesHoje = detalhe ? null : calcularDosesHoje(r) // fallback para frequências sem horários
 
         return (
           <div key={r.id} style={card}>
@@ -563,13 +844,52 @@ function RemediosTab({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
                   <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ink)' }}>{r.nome}</span>
                   <Badge status={status} />
+
+                  {/* Badges granulares por slot — apenas para diário com horários */}
+                  {detalhe && detalhe.atrasadas > 0 && (
+                    <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: 'var(--coral-50)', color: 'var(--coral)' }}>
+                      {detalhe.atrasadas} dose{detalhe.atrasadas > 1 ? 's' : ''} atrasada{detalhe.atrasadas > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {detalhe && detalhe.quase > 0 && (
+                    <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: '#FFF7ED', color: '#C2410C' }}>
+                      {detalhe.quase} dose{detalhe.quase > 1 ? 's' : ''} quase na hora
+                    </span>
+                  )}
+                  {detalhe && detalhe.emBreve > 0 && (
+                    <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: '#FEF3C7', color: '#92400E' }}>
+                      {detalhe.emBreve} dose{detalhe.emBreve > 1 ? 's' : ''} em breve
+                    </span>
+                  )}
+                  {detalhe && detalhe.feitas > 0 && detalhe.atrasadas === 0 && detalhe.quase === 0 && detalhe.emBreve === 0 && (
+                    <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: 'var(--teal-50)', color: 'var(--teal-800)' }}>
+                      {detalhe.feitas}/{(parseDose(r.dose)?.quantidade ?? detalhe.feitas)} hoje ✓
+                    </span>
+                  )}
+
+                  {/* Fallback para frequências sem horários: X/Y hoje */}
+                  {dosesHoje && (
+                    <span style={{
+                      padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700,
+                      background: dosesHoje.tomadas >= dosesHoje.total ? 'var(--teal-50)' : '#FEF3C7',
+                      color: dosesHoje.tomadas >= dosesHoje.total ? 'var(--teal-800)' : '#92400E',
+                    }}>
+                      {dosesHoje.tomadas}/{dosesHoje.total} hoje
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: '12px', color: 'var(--ink3)' }}>
-                  {r.dose} · {FREQ_OPTIONS.find(f => f.value === r.frequencia)?.label ?? r.frequencia}
+                  {formatDoseLabel(r.dose)} · {FREQ_OPTIONS.find(f => f.value === r.frequencia)?.label ?? r.frequencia}
                   {r.dataFim ? ` · até ${fmt(r.dataFim)}` : ''}
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--ink4)', marginTop: '2px' }}>
-                  Última: {ultima ? fmtHora(ultima) : 'nunca'}
+                <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: 'var(--ink4)', marginTop: '3px' }}>
+                  <span>Última: {ultima ? fmtHora(ultima) : 'nunca'}</span>
+                  <span style={{
+                    color: status === 'ATRASADO' ? 'var(--coral)' : status === 'QUASE' ? '#C2410C' : 'var(--teal-800)',
+                    fontWeight: 600,
+                  }}>
+                    Próxima: {proximaStr}
+                  </span>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>
@@ -681,7 +1001,7 @@ function CuidadosTab({
       )}
 
       {cuidados.map(c => {
-        const status = calcularStatusCuidado(c.proximaExecucao ? new Date(c.proximaExecucao) : null) as StatusBadge
+        const status = calcularStatusCuidadoDisplay(c)
         const isExpanded = expandido === c.id
 
         return (
