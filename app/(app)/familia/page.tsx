@@ -31,7 +31,7 @@ export default async function FamiliaPage() {
     <div style={{ padding: '24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
-          <div style={{ fontFamily: 'var(--font-syne)', fontSize: '20px', fontWeight: 800, color: 'var(--ink)' }}>{familia.nome}</div>
+          <div style={{ fontFamily: 'var(--font-syne)', fontSize: '20px', fontWeight: 800, color: 'var(--ink)' }}>{`Família ${familia.nome}`}</div>
           <div style={{ fontSize: '13px', color: 'var(--ink3)', marginTop: '2px' }}>Gerencie membros e convites</div>
         </div>
       </div>

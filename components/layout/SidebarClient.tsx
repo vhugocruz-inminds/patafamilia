@@ -107,7 +107,7 @@ export default function SidebarClient({ usuario, familia, pets, naoLidas, childr
             <div className={styles.brandCopy}>
               <div className={styles.brandTitle}>PataFamilia</div>
               <div className={styles.familyName} title={familia.nome}>
-                {familia.nome}
+                {`Família ${familia.nome}`}
               </div>
             </div>
           </div>
