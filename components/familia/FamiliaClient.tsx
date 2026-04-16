@@ -43,11 +43,32 @@ export default function FamiliaClient({
   const [processandoAcao, setProcessandoAcao] = useState(false)
   const router = useRouter()
 
-  function copiarCodigo() {
-    navigator.clipboard.writeText(familia.codigoConvite)
+  async function copiarTexto(texto: string) {
+    try {
+      await navigator.clipboard.writeText(texto)
+    } catch {
+      const el = document.createElement('textarea')
+      el.value = texto
+      el.style.position = 'fixed'
+      el.style.opacity = '0'
+      document.body.appendChild(el)
+      el.focus()
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+    }
+  }
+
+  async function copiarCodigo() {
+    await copiarTexto(familia.codigoConvite)
     setCopiado(true)
     setTimeout(() => setCopiado(false), 2000)
-    toast.success('Codigo copiado!')
+    toast.success('Código copiado!')
+  }
+
+  async function copiarLink() {
+    await copiarTexto(`${window.location.origin}/convite/${familia.codigoConvite}`)
+    toast.success('Link copiado!')
   }
 
   async function enviarConvite(e: React.FormEvent) {
@@ -279,10 +300,7 @@ export default function FamiliaClient({
             Compartilhe este link diretamente com os membros.
           </div>
           <button
-            onClick={() => {
-              navigator.clipboard.writeText(`${window.location.origin}/convite/${familia.codigoConvite}`)
-              toast.success('Link copiado!')
-            }}
+            onClick={copiarLink}
             style={{
               background: 'var(--teal)',
               color: '#fff',

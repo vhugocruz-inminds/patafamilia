@@ -100,20 +100,32 @@ export default function NovoPetPage() {
 
     // 2. Create medications
     for (const med of medicamentos) {
-      await fetch(`/api/pets/${pet.id}/remedios`, {
+      const medRes = await fetch(`/api/pets/${pet.id}/remedios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(med),
       })
+      if (!medRes.ok) {
+        const err = await medRes.json().catch(() => ({}))
+        toast.error(`Erro ao salvar remédio "${med.nome}": ${err.error ?? 'tente novamente'}`)
+        setLoading(false)
+        return
+      }
     }
 
     // 3. Create care routines
     for (const cuidado of cuidados) {
-      await fetch(`/api/pets/${pet.id}/cuidados`, {
+      const cuidadoRes = await fetch(`/api/pets/${pet.id}/cuidados`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(cuidado),
       })
+      if (!cuidadoRes.ok) {
+        const err = await cuidadoRes.json().catch(() => ({}))
+        toast.error(`Erro ao salvar cuidado "${cuidado.tipo}": ${err.error ?? 'tente novamente'}`)
+        setLoading(false)
+        return
+      }
     }
 
     toast.success(`${emoji} ${nome} cadastrado com sucesso!`)

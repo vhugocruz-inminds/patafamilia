@@ -151,18 +151,30 @@ export default function OnboardingPage() {
     setLoading(true)
     try {
       for (const med of medicamentos) {
-        await fetch(`/api/pets/${petId}/remedios`, {
+        const medRes = await fetch(`/api/pets/${petId}/remedios`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(med),
         })
+        if (!medRes.ok) {
+          const err = await medRes.json().catch(() => ({}))
+          toast.error(`Erro ao salvar remédio "${med.nome}": ${err.error ?? 'tente novamente'}`)
+          setLoading(false)
+          return
+        }
       }
       for (const cuidado of cuidados) {
-        await fetch(`/api/pets/${petId}/cuidados`, {
+        const cuidadoRes = await fetch(`/api/pets/${petId}/cuidados`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(cuidado),
         })
+        if (!cuidadoRes.ok) {
+          const err = await cuidadoRes.json().catch(() => ({}))
+          toast.error(`Erro ao salvar cuidado "${cuidado.tipo}": ${err.error ?? 'tente novamente'}`)
+          setLoading(false)
+          return
+        }
       }
       toast.success('Tudo pronto! Bem-vindo ao PataFamília 🎉')
       router.push('/dashboard')
