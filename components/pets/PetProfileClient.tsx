@@ -152,9 +152,7 @@ function calcularProximaDoseStr(r: Remedio): string {
       }
     }
     // Todos os slots de hoje foram tomados ou passaram
-    const amanha = new Date(hojeInicio)
-    amanha.setDate(amanha.getDate() + 1)
-    return `Amanhã às ${doseInfo.horarios[0]}`
+    return `Amanhã, às ${doseInfo.horarios[0]}`
   }
 
   // Sem horários definidos → cálculo simples por intervalo
@@ -175,8 +173,11 @@ function calcularProximaDoseStr(r: Remedio): string {
 
   if (proximaNorm < hoje) return 'Atrasado'
   if (proximaNorm.getTime() === hoje.getTime()) return 'Hoje'
-  if (proximaNorm.getTime() === amanha.getTime()) return 'Amanhã'
-  return fmt(proxima.toISOString())
+
+  const hora = proxima.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  if (proximaNorm.getTime() === amanha.getTime()) return `Amanhã, às ${hora}`
+  const dataParte = proxima.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  return `${dataParte}, às ${hora}`
 }
 
 function calcularDosesHoje(r: Remedio): { tomadas: number; total: number } | null {
@@ -334,8 +335,10 @@ function calcularProximoSlotCuidadoStr(c: Cuidado): string {
     const proximaNorm = new Date(proxima); proximaNorm.setHours(0, 0, 0, 0)
     if (proximaNorm < hojeInicio) return 'Atrasado'
     if (proximaNorm.getTime() === hojeInicio.getTime()) return 'Hoje'
-    if (proximaNorm.getTime() === amanha.getTime()) return 'Amanhã'
-    return fmt(proxima.toISOString())
+    const hora = proxima.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+    if (proximaNorm.getTime() === amanha.getTime()) return `Amanhã, às ${hora}`
+    const dataParte = proxima.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+    return `${dataParte}, às ${hora}`
   }
   const agora = new Date()
   const hojeInicio = new Date(agora); hojeInicio.setHours(0, 0, 0, 0)
@@ -349,7 +352,7 @@ function calcularProximoSlotCuidadoStr(c: Cuidado): string {
       if (slot > agora) return `Hoje às ${h}`
     }
   }
-  return `Amanhã às ${conf.horarios[0]}`
+  return `Amanhã, às ${conf.horarios[0]}`
 }
 
 type DetalheSlotsC = { atrasadas: number; quase: number; emBreve: number; feitas: number } | null
