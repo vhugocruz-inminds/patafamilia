@@ -21,7 +21,12 @@ export default async function DashboardPage() {
                 include: {
                   remedios: {
                     where: { ativo: true },
-                    include: { administracoes: { orderBy: { administradoEm: 'desc' }, take: 1 } },
+                    include: {
+                      administracoes: {
+                        where: { administradoEm: { gte: new Date(Date.now() - 31 * 86_400_000) } },
+                        orderBy: { administradoEm: 'desc' },
+                      },
+                    },
                   },
                   cuidados: { where: { ativo: true } },
                   passeios: { where: { tipo: 'AGENDADO' }, orderBy: { agendadoEm: 'asc' }, take: 5 },
@@ -42,25 +47,36 @@ export default async function DashboardPage() {
   const amanha = new Date(hoje.getTime() + 86400000)
 
   // Pendências de hoje: remédios atrasados/em breve + cuidados atrasados
-  const pendencias: { id: string; nome: string; petNome: string; petEmoji: string; tipo: 'remedio' | 'cuidado' | 'passeio'; status: string; hora?: string; entidadeId: string }[] = []
+  const pendencias: { id: string; petId: string; nome: string; petNome: string; petEmoji: string; tipo: 'remedio' | 'cuidado' | 'passeio'; status: string; hora?: string; entidadeId: string }[] = []
 
   for (const pet of familia.pets) {
     for (const remedio of pet.remedios) {
       const ultima = remedio.administracoes[0]?.administradoEm ?? null
       const status = calcularStatusRemedio(remedio.frequencia, ultima, remedio.dataInicio)
       if (status === 'ATRASADO' || status === 'EM_BREVE') {
-        pendencias.push({ id: `rem-${remedio.id}`, nome: remedio.nome, petNome: pet.nome, petEmoji: pet.emoji, tipo: 'remedio', status, entidadeId: remedio.id })
+        // Multi-dose diário: não mostrar como pendência se todas as doses do dia já foram dadas
+        let todasDosesFeitas = false
+        try {
+          const doseInfo = JSON.parse(remedio.dose)
+          if (typeof doseInfo.quantidade === 'number' && doseInfo.quantidade > 1 && remedio.frequencia === 'DIARIO') {
+            const admHoje = remedio.administracoes.filter(a => a.administradoEm >= hoje).length
+            todasDosesFeitas = admHoje >= doseInfo.quantidade
+          }
+        } catch { /* dose em texto legado — usa status padrão */ }
+        if (!todasDosesFeitas) {
+          pendencias.push({ id: `rem-${remedio.id}`, petId: pet.id, nome: remedio.nome, petNome: pet.nome, petEmoji: pet.emoji, tipo: 'remedio', status, entidadeId: remedio.id })
+        }
       }
     }
     for (const cuidado of pet.cuidados) {
       const status = calcularStatusCuidado(cuidado.proximaExecucao)
       if (status === 'ATRASADO' || status === 'EM_BREVE') {
-        pendencias.push({ id: `cui-${cuidado.id}`, nome: cuidado.tipo, petNome: pet.nome, petEmoji: pet.emoji, tipo: 'cuidado', status, entidadeId: cuidado.id })
+        pendencias.push({ id: `cui-${cuidado.id}`, petId: pet.id, nome: cuidado.tipo, petNome: pet.nome, petEmoji: pet.emoji, tipo: 'cuidado', status, entidadeId: cuidado.id })
       }
     }
     for (const passeio of pet.passeios) {
       if (passeio.agendadoEm && passeio.agendadoEm >= hoje && passeio.agendadoEm < amanha) {
-        pendencias.push({ id: `pas-${passeio.id}`, nome: 'Passeio', petNome: pet.nome, petEmoji: pet.emoji, tipo: 'passeio', status: 'EM_BREVE', hora: formatarDataHora(passeio.agendadoEm), entidadeId: passeio.id })
+        pendencias.push({ id: `pas-${passeio.id}`, petId: pet.id, nome: 'Passeio', petNome: pet.nome, petEmoji: pet.emoji, tipo: 'passeio', status: 'EM_BREVE', hora: formatarDataHora(passeio.agendadoEm), entidadeId: passeio.id })
       }
     }
   }
@@ -205,7 +221,7 @@ export default async function DashboardPage() {
                         {p.status === 'ATRASADO' ? 'Atrasado' : p.hora || 'Em breve'}
                       </div>
                     </div>
-                    <Link href={`/pets/${familia.pets.find(pt => pt.nome === p.petNome)?.id ?? ''}`} style={{ width: '26px', height: '26px', borderRadius: '50%', border: '1.5px solid var(--border2)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', color: 'var(--teal)', textDecoration: 'none' }}>→</Link>
+                    <Link href={`/pets/${p.petId}`} style={{ width: '26px', height: '26px', borderRadius: '50%', border: '1.5px solid var(--border2)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', color: 'var(--teal)', textDecoration: 'none' }}>→</Link>
                   </div>
                 )
               })

@@ -108,6 +108,7 @@ enum FrequenciaRemedio {
 model Administracao {
   id             String   @id @default(uuid())
   administradoEm DateTime @default(now()) @map("administrado_em")
+  statusDose     String?  @map("status_dose")
   observacoes    String?
 
   remedioId String  @map("remedio_id")

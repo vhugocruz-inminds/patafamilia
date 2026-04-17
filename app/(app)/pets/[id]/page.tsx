@@ -77,6 +77,7 @@ export default async function PetPage({ params }: { params: Promise<{ id: string
     administracoes: r.administracoes.map(a => ({
       id: a.id,
       administradoEm: a.administradoEm.toISOString(),
+      statusDose: a.statusDose ?? null,
       membro: { usuario: { nome: a.membro.usuario.nome } },
     })),
   }))

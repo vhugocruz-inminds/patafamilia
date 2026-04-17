@@ -20,6 +20,8 @@ export async function GET(req: NextRequest) {
   }
 
   const agora = new Date()
+  const hojeInicio = new Date(agora)
+  hojeInicio.setHours(0, 0, 0, 0)
   // Janela de deduplicação: não reenviar notificação ATRASADO para o mesmo item
   // se já foi enviada nas últimas 20 horas (evita spam no dia seguinte)
   const deduJanela = new Date(agora.getTime() - 20 * 3_600_000)
@@ -30,7 +32,11 @@ export async function GET(req: NextRequest) {
     where: { ativo: true },
     include: {
       pet: { include: { familia: { include: { membros: true } } } },
-      administracoes: { orderBy: { administradoEm: 'desc' }, take: 5 },
+      // 31 dias cobre MENSAL para o check de intervalo; sem take para multi-dose intradiário
+      administracoes: {
+        where: { administradoEm: { gte: new Date(agora.getTime() - 31 * 86_400_000) } },
+        orderBy: { administradoEm: 'desc' },
+      },
     },
   })
 
@@ -41,9 +47,6 @@ export async function GET(req: NextRequest) {
 
     if (doseInfo && doseInfo.horarios.length > 0 && remedio.frequencia === 'DIARIO') {
       // Tracking intradiário: verifica se algum slot de hoje passou sem administração
-      const hojeInicio = new Date(agora)
-      hojeInicio.setHours(0, 0, 0, 0)
-
       const admHoje = remedio.administracoes.filter(
         a => a.administradoEm >= hojeInicio
       ).length
@@ -112,8 +115,6 @@ export async function GET(req: NextRequest) {
       try {
         const conf = JSON.parse(cuidado.configuracao) as { vezesPorDia: number; horarios: string[] }
         if (Array.isArray(conf.horarios) && conf.horarios.length > 0) {
-          const hojeInicio = new Date(agora)
-          hojeInicio.setHours(0, 0, 0, 0)
           const execHoje = cuidado.execucoes.filter(e => e.executadoEm >= hojeInicio).length
           const slotsPassados = conf.horarios.filter(h => {
             const [hh, mm] = h.split(':').map(Number)

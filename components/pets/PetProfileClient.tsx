@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 type Administracao = {
   id: string
   administradoEm: string
+  statusDose: string | null
   membro: { usuario: { nome: string } }
 }
 
@@ -285,9 +286,13 @@ function calcularStatusRemedioDisplay(r: Remedio): StatusBadge {
     return 'EM_DIA'
   }
   proxima = new Date(new Date(ultima).getTime() + intervalo * 86_400_000)
-  const diffDias = (proxima.getTime() - agora.getTime()) / 86_400_000
-  if (diffDias < 0) return 'ATRASADO'
-  if (diffDias <= 1) return 'QUASE'
+  const hojeNorm = new Date(agora)
+  hojeNorm.setHours(0, 0, 0, 0)
+  const proximaNorm = new Date(proxima)
+  proximaNorm.setHours(0, 0, 0, 0)
+  if (proximaNorm < hojeNorm) return 'ATRASADO'
+  const diffDias = (proximaNorm.getTime() - hojeNorm.getTime()) / 86_400_000
+  if (diffDias === 0) return 'QUASE'
   if (diffDias <= 7) return 'EM_BREVE'
   return 'EM_DIA'
 }
@@ -965,15 +970,16 @@ function RemediosTab({
       body: JSON.stringify({ membroId }),
     })
     setLoadingAdm(null)
-    if (res.status === 409) {
-      toast.error('Remédio já foi administrado recentemente.')
-      return
-    }
     if (!res.ok) { toast.error('Erro ao registrar.'); return }
     const adm = await res.json()
-    toast.success(`${r.nome} administrado!`)
+    const statusMsgs: Record<string, string> = {
+      ATRASADO:  `${r.nome} registrado — dose atrasada.`,
+      ADIANTADO: `${r.nome} registrado — dose adiantada.`,
+      EXTRA:     `${r.nome} registrado — dose extra além das prescritas.`,
+    }
+    toast.success(adm.statusDose ? statusMsgs[adm.statusDose] ?? `${r.nome} administrado!` : `${r.nome} administrado!`)
     setRemedios(prev => prev.map(x =>
-      x.id === r.id ? { ...x, administracoes: [adm, ...x.administracoes] } : x
+      x.id === r.id ? { ...x, administracoes: [{ ...adm, administradoEm: adm.administradoEm, statusDose: adm.statusDose ?? null, membro: adm.membro }, ...x.administracoes] } : x
     ))
   }
 
@@ -1098,12 +1104,27 @@ function RemediosTab({
                   <div style={{ fontSize: '12px', color: 'var(--ink4)' }}>Nenhum registro ainda.</div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {r.administracoes.slice(0, 8).map(a => (
-                      <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--ink3)' }}>
-                        <span>💊 {fmtHora(a.administradoEm)}</span>
-                        <span>{a.membro.usuario.nome}</span>
-                      </div>
-                    ))}
+                    {r.administracoes.slice(0, 8).map(a => {
+                      const statusBadge: Record<string, { label: string; bg: string; color: string }> = {
+                        ATRASADO:  { label: 'Atrasado',   bg: 'var(--coral-50)',  color: 'var(--coral)' },
+                        ADIANTADO: { label: 'Adiantado',  bg: '#FEF3C7',          color: '#92400E' },
+                        EXTRA:     { label: 'Dose extra', bg: '#EDE9FE',          color: '#5B21B6' },
+                      }
+                      const badge = a.statusDose ? statusBadge[a.statusDose] : null
+                      return (
+                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px', color: 'var(--ink3)', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span>💊 {fmtHora(a.administradoEm)}</span>
+                            {badge && (
+                              <span style={{ padding: '1px 7px', borderRadius: '20px', fontSize: '10px', fontWeight: 700, background: badge.bg, color: badge.color }}>
+                                {badge.label}
+                              </span>
+                            )}
+                          </div>
+                          <span style={{ flexShrink: 0 }}>{a.membro.usuario.nome}</span>
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
               </div>
