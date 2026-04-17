@@ -34,6 +34,7 @@ type Cuidado = {
   id: string
   tipo: string
   frequenciaDias: number
+  configuracao: string | null
   ultimaExecucao: string | null
   proximaExecucao: string | null
   ativo: boolean
@@ -291,13 +292,116 @@ function calcularStatusRemedioDisplay(r: Remedio): StatusBadge {
   return 'EM_DIA'
 }
 
-// Calcula status visual para cuidado — QUASE se nas próximas 24h
+// ─── Cuidado config helpers ────────────────────────────────────────────────────
+
+type ConfigCuidado = { vezesPorDia: number; horarios: string[] }
+
+function parseConfigCuidado(conf: string | null): ConfigCuidado | null {
+  if (!conf) return null
+  try {
+    const p = JSON.parse(conf)
+    if (typeof p.vezesPorDia === 'number' && Array.isArray(p.horarios)) return p
+  } catch { /* */ }
+  return null
+}
+
+function gerarHorariosDefaultCuidado(n: number): string[] {
+  if (n === 1) return ['08:00']
+  if (n === 2) return ['10:00', '21:00']
+  if (n === 3) return ['08:00', '14:00', '20:00']
+  if (n === 4) return ['08:00', '12:00', '17:00', '21:00']
+  const arr: string[] = []
+  for (let i = 0; i < n; i++) {
+    const h = Math.round(8 + (i * 13) / Math.max(n - 1, 1))
+    arr.push(`${Math.min(h, 22).toString().padStart(2, '0')}:00`)
+  }
+  return arr
+}
+
+function calcularProximoSlotCuidadoStr(c: Cuidado): string {
+  const conf = parseConfigCuidado(c.configuracao)
+  if (!conf || conf.horarios.length === 0) {
+    if (!c.proximaExecucao) return '—'
+    const proxima = new Date(c.proximaExecucao)
+    const agora = new Date()
+    const hojeInicio = new Date(agora); hojeInicio.setHours(0, 0, 0, 0)
+    const amanha = new Date(hojeInicio); amanha.setDate(amanha.getDate() + 1)
+    const proximaNorm = new Date(proxima); proximaNorm.setHours(0, 0, 0, 0)
+    if (proximaNorm < hojeInicio) return 'Atrasado'
+    if (proximaNorm.getTime() === hojeInicio.getTime()) return 'Hoje'
+    if (proximaNorm.getTime() === amanha.getTime()) return 'Amanhã'
+    return fmt(proxima.toISOString())
+  }
+  const agora = new Date()
+  const hojeInicio = new Date(agora); hojeInicio.setHours(0, 0, 0, 0)
+  const execHoje = c.execucoes.filter(e => new Date(e.executadoEm) >= hojeInicio).length
+  const dosesRestantes = conf.vezesPorDia - execHoje
+  if (dosesRestantes > 0) {
+    for (const h of conf.horarios) {
+      const [hh, mm] = h.split(':').map(Number)
+      const slot = new Date(agora)
+      slot.setHours(hh, mm, 0, 0)
+      if (slot > agora) return `Hoje às ${h}`
+    }
+  }
+  return `Amanhã às ${conf.horarios[0]}`
+}
+
+type DetalheSlotsC = { atrasadas: number; quase: number; emBreve: number; feitas: number } | null
+
+function calcularDetalheSlotsCuidado(c: Cuidado): DetalheSlotsC {
+  const conf = parseConfigCuidado(c.configuracao)
+  if (!conf || conf.horarios.length === 0) return null
+  const agora = new Date()
+  const hojeInicio = new Date(agora); hojeInicio.setHours(0, 0, 0, 0)
+  const execHoje = c.execucoes.filter(e => new Date(e.executadoEm) >= hojeInicio).length
+  let slotsPassados = 0, slotsQuase = 0, slotsFuturos = 0
+  for (const h of conf.horarios) {
+    const [hh, mm] = h.split(':').map(Number)
+    const slot = new Date(agora)
+    slot.setHours(hh, mm, 0, 0)
+    const diffMin = (slot.getTime() - agora.getTime()) / 60_000
+    if (slot.getTime() + 15 * 60_000 < agora.getTime()) slotsPassados++
+    else if (diffMin >= 0 && diffMin <= 60) slotsQuase++
+    else slotsFuturos++
+  }
+  const feitas = Math.min(execHoje, conf.vezesPorDia)
+  const atrasadas = Math.max(0, slotsPassados - execHoje)
+  const sobra = Math.max(0, execHoje - slotsPassados)
+  const quase = Math.max(0, slotsQuase - sobra)
+  const emBreve = Math.max(0, slotsFuturos - Math.max(0, sobra - slotsQuase))
+  return { atrasadas, quase, emBreve, feitas }
+}
+
+// Calcula status visual para cuidado — considera horários intradiários e QUASE
 function calcularStatusCuidadoDisplay(c: Cuidado): StatusBadge {
+  const conf = parseConfigCuidado(c.configuracao)
+  if (conf && conf.horarios.length > 0) {
+    const agora = new Date()
+    const hojeInicio = new Date(agora); hojeInicio.setHours(0, 0, 0, 0)
+    const execHoje = c.execucoes.filter(e => new Date(e.executadoEm) >= hojeInicio).length
+    const slotsPassados = conf.horarios.filter(h => {
+      const [hh, mm] = h.split(':').map(Number)
+      const slot = new Date(agora); slot.setHours(hh, mm, 0, 0)
+      return slot.getTime() + 15 * 60_000 < agora.getTime()
+    }).length
+    if (execHoje < slotsPassados) return 'ATRASADO'
+    for (const h of conf.horarios) {
+      const [hh, mm] = h.split(':').map(Number)
+      const slot = new Date(agora); slot.setHours(hh, mm, 0, 0)
+      const diffMin = (slot.getTime() - agora.getTime()) / 60_000
+      if (diffMin >= 0 && diffMin <= 60) return 'QUASE'
+    }
+    if (execHoje >= conf.vezesPorDia) return 'EM_DIA'
+    return 'EM_BREVE'
+  }
+  // Intervalo por dias
   if (!c.proximaExecucao) return 'ATRASADO'
   const agora = new Date()
-  const proxima = new Date(c.proximaExecucao)
-  const diffDias = (proxima.getTime() - agora.getTime()) / 86_400_000
-  if (diffDias < 0) return 'ATRASADO'
+  const hojeInicio = new Date(agora); hojeInicio.setHours(0, 0, 0, 0)
+  const proximaNorm = new Date(c.proximaExecucao); proximaNorm.setHours(0, 0, 0, 0)
+  if (proximaNorm < hojeInicio) return 'ATRASADO'
+  const diffDias = (proximaNorm.getTime() - hojeInicio.getTime()) / 86_400_000
   if (diffDias <= 1) return 'QUASE'
   if (diffDias <= 7) return 'EM_BREVE'
   return 'EM_DIA'
@@ -629,19 +733,42 @@ function AddCuidadoForm({
 }) {
   const [tipo, setTipo] = useState('')
   const [tipoCustom, setTipoCustom] = useState('')
+  const [modo, setModo] = useState<'INTERVALO' | 'INTRADIARIO'>('INTERVALO')
   const [frequenciaDias, setFrequenciaDias] = useState('30')
+  const [vezesPorDia, setVezesPorDia] = useState(1)
+  const [horarios, setHorarios] = useState<string[]>(['08:00'])
   const [loading, setLoading] = useState(false)
 
   const tipoFinal = tipo === 'Outro' ? tipoCustom : tipo
+
+  function handleVezesPorDia(n: number) {
+    const clamped = Math.max(1, Math.min(12, n))
+    setVezesPorDia(clamped)
+    setHorarios(gerarHorariosDefaultCuidado(clamped))
+  }
+
+  function updateHorario(idx: number, val: string) {
+    setHorarios(prev => prev.map((h, i) => i === idx ? val : h))
+  }
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault()
     if (!tipoFinal.trim()) { toast.error('Informe o tipo de cuidado.'); return }
     setLoading(true)
+
+    const configuracao = modo === 'INTRADIARIO'
+      ? JSON.stringify({ vezesPorDia, horarios: horarios.slice(0, vezesPorDia) })
+      : null
+
     const res = await fetch(`/api/pets/${petId}/cuidados`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tipo: tipoFinal, frequenciaDias: Number(frequenciaDias), membroId }),
+      body: JSON.stringify({
+        tipo: tipoFinal,
+        frequenciaDias: modo === 'INTRADIARIO' ? 1 : Number(frequenciaDias),
+        configuracao,
+        membroId,
+      }),
     })
     setLoading(false)
     if (!res.ok) { toast.error('Erro ao salvar cuidado.'); return }
@@ -650,26 +777,81 @@ function AddCuidadoForm({
     onAdded({ ...c, execucoes: [] })
   }
 
+  const lbl: React.CSSProperties = { fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', display: 'block', marginBottom: '4px' }
+
   return (
     <form onSubmit={salvar} style={{ ...card, background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--ink)', marginBottom: '2px' }}>Novo cuidado</div>
+
       <div>
-        <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', display: 'block', marginBottom: '4px' }}>TIPO</label>
+        <label style={lbl}>TIPO</label>
         <select required value={tipo} onChange={e => setTipo(e.target.value)} style={inputStyle}>
           <option value="">Selecione…</option>
           {TIPOS_CUIDADO.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
+
       {tipo === 'Outro' && (
         <div>
-          <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', display: 'block', marginBottom: '4px' }}>DESCREVA</label>
+          <label style={lbl}>DESCREVA</label>
           <input required value={tipoCustom} onChange={e => setTipoCustom(e.target.value)} placeholder="Ex: Hidratação do pelo" style={inputStyle} />
         </div>
       )}
+
       <div>
-        <label style={{ fontSize: '11px', fontWeight: 700, color: 'var(--ink4)', display: 'block', marginBottom: '4px' }}>FREQUÊNCIA (dias)</label>
-        <input required type="number" min="1" value={frequenciaDias} onChange={e => setFrequenciaDias(e.target.value)} style={inputStyle} />
+        <label style={{ ...lbl, marginBottom: '6px' }}>FREQUÊNCIA</label>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {(['INTERVALO', 'INTRADIARIO'] as const).map(m => (
+            <button key={m} type="button" onClick={() => setModo(m)} style={{
+              ...btnGhost,
+              background: modo === m ? 'var(--amber)' : 'transparent',
+              color: modo === m ? '#412402' : 'var(--ink3)',
+              border: modo === m ? 'none' : '1px solid var(--border)',
+              fontSize: '12px',
+            }}>
+              {m === 'INTERVALO' ? '📅 A cada N dias' : '🕐 N vezes por dia'}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {modo === 'INTERVALO' && (
+        <div>
+          <label style={lbl}>A CADA QUANTOS DIAS</label>
+          <input required type="number" min="1" value={frequenciaDias} onChange={e => setFrequenciaDias(e.target.value)} style={inputStyle} />
+        </div>
+      )}
+
+      {modo === 'INTRADIARIO' && (
+        <>
+          <div>
+            <label style={{ ...lbl, marginBottom: '6px' }}>VEZES POR DIA</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <button type="button" onClick={() => handleVezesPorDia(vezesPorDia - 1)}
+                style={{ ...btnGhost, padding: '4px 14px', fontSize: '16px' }}>−</button>
+              <span style={{ fontSize: '15px', fontWeight: 700, color: 'var(--ink)', minWidth: '24px', textAlign: 'center' }}>{vezesPorDia}</span>
+              <button type="button" onClick={() => handleVezesPorDia(vezesPorDia + 1)}
+                style={{ ...btnGhost, padding: '4px 14px', fontSize: '16px' }}>+</button>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={lbl}>HORÁRIOS</label>
+            {horarios.slice(0, vezesPorDia).map((h, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '12px', color: 'var(--ink3)', minWidth: '60px' }}>{i + 1}ª vez</span>
+                <input
+                  type="time"
+                  required
+                  value={h}
+                  onChange={e => updateHorario(i, e.target.value)}
+                  style={{ ...inputStyle, width: '130px' }}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
         <button type="button" onClick={onCancel} style={btnGhost}>Cancelar</button>
         <button type="submit" disabled={loading} style={{ ...btnPrimary, opacity: loading ? 0.7 : 1 }}>
@@ -957,7 +1139,11 @@ function CuidadosTab({
     const exec = await res.json()
     toast.success(`${c.tipo} registrado!`)
     const agora = new Date().toISOString()
-    const proxima = new Date(Date.now() + c.frequenciaDias * 86_400_000).toISOString()
+    // Para intradiário, execucoes[] drive o display — proximaExecucao vem do servidor no reload
+    const conf = parseConfigCuidado(c.configuracao)
+    const proxima = conf
+      ? agora
+      : new Date(Date.now() + c.frequenciaDias * 86_400_000).toISOString()
     setCuidados(prev => prev.map(x =>
       x.id === c.id
         ? { ...x, ultimaExecucao: agora, proximaExecucao: proxima, execucoes: [exec, ...x.execucoes] }
@@ -1003,6 +1189,9 @@ function CuidadosTab({
       {cuidados.map(c => {
         const status = calcularStatusCuidadoDisplay(c)
         const isExpanded = expandido === c.id
+        const detalhe = calcularDetalheSlotsCuidado(c)
+        const conf = parseConfigCuidado(c.configuracao)
+        const proximoStr = calcularProximoSlotCuidadoStr(c)
 
         return (
           <div key={c.id} style={card}>
@@ -1011,13 +1200,42 @@ function CuidadosTab({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
                   <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--ink)' }}>{c.tipo}</span>
                   <Badge status={status} />
+
+                  {detalhe && detalhe.atrasadas > 0 && (
+                    <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: 'var(--coral-50)', color: 'var(--coral)' }}>
+                      {detalhe.atrasadas} vez{detalhe.atrasadas > 1 ? 'es' : ''} atrasada{detalhe.atrasadas > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {detalhe && detalhe.quase > 0 && (
+                    <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: '#FFF7ED', color: '#C2410C' }}>
+                      {detalhe.quase} vez{detalhe.quase > 1 ? 'es' : ''} quase na hora
+                    </span>
+                  )}
+                  {detalhe && detalhe.emBreve > 0 && (
+                    <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: '#FEF3C7', color: '#92400E' }}>
+                      {detalhe.emBreve} vez{detalhe.emBreve > 1 ? 'es' : ''} em breve
+                    </span>
+                  )}
+                  {detalhe && detalhe.feitas > 0 && detalhe.atrasadas === 0 && detalhe.quase === 0 && detalhe.emBreve === 0 && (
+                    <span style={{ padding: '2px 8px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: 'var(--teal-50)', color: 'var(--teal-800)' }}>
+                      {detalhe.feitas}/{conf?.vezesPorDia ?? detalhe.feitas} hoje ✓
+                    </span>
+                  )}
                 </div>
+
                 <div style={{ fontSize: '12px', color: 'var(--ink3)' }}>
-                  A cada {c.frequenciaDias} dias
+                  {conf
+                    ? `${conf.vezesPorDia}x/dia · ${conf.horarios.join(', ')}`
+                    : `A cada ${c.frequenciaDias} dias`}
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--ink4)', marginTop: '2px' }}>
-                  Última: {c.ultimaExecucao ? fmt(c.ultimaExecucao) : 'nunca'}
-                  {c.proximaExecucao ? ` · Próxima: ${fmt(c.proximaExecucao)}` : ''}
+                <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: 'var(--ink4)', marginTop: '2px' }}>
+                  <span>Última: {c.ultimaExecucao ? fmtHora(c.ultimaExecucao) : 'nunca'}</span>
+                  <span style={{
+                    color: status === 'ATRASADO' ? 'var(--coral)' : status === 'QUASE' ? '#C2410C' : 'var(--teal-800)',
+                    fontWeight: 600,
+                  }}>
+                    Próxima: {proximoStr}
+                  </span>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '6px', flexShrink: 0, alignItems: 'center' }}>

@@ -1,19 +1,57 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+function calcularProximaIntraday(horarios: string[]): Date {
+  const agora = new Date()
+  for (const h of horarios) {
+    const [hh, mm] = h.split(':').map(Number)
+    const slot = new Date(agora)
+    slot.setHours(hh, mm, 0, 0)
+    if (slot > agora) return slot
+  }
+  // Todos os slots de hoje passaram — primeiro slot amanhã
+  const amanha = new Date(agora)
+  amanha.setDate(amanha.getDate() + 1)
+  const [hh, mm] = horarios[0].split(':').map(Number)
+  amanha.setHours(hh, mm, 0, 0)
+  return amanha
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ petId: string }> }
 ) {
   const { petId } = await params
-  const { tipo, frequenciaDias, membroId } = await req.json()
+  const { tipo, frequenciaDias, configuracao, membroId } = await req.json()
 
   try {
-    const proxima = new Date()
-    proxima.setDate(proxima.getDate() + Number(frequenciaDias))
+    let proxima: Date
+    if (configuracao) {
+      try {
+        const conf = JSON.parse(configuracao)
+        if (Array.isArray(conf.horarios) && conf.horarios.length > 0) {
+          proxima = calcularProximaIntraday(conf.horarios)
+        } else {
+          proxima = new Date()
+          proxima.setDate(proxima.getDate() + Number(frequenciaDias))
+        }
+      } catch {
+        proxima = new Date()
+        proxima.setDate(proxima.getDate() + Number(frequenciaDias))
+      }
+    } else {
+      proxima = new Date()
+      proxima.setDate(proxima.getDate() + Number(frequenciaDias))
+    }
 
     const cuidado = await prisma.cuidado.create({
-      data: { petId, tipo, frequenciaDias: Number(frequenciaDias), proximaExecucao: proxima },
+      data: {
+        petId,
+        tipo,
+        frequenciaDias: Number(frequenciaDias),
+        configuracao: configuracao ?? null,
+        proximaExecucao: proxima,
+      },
     })
 
     const pet = await prisma.pet.findUnique({

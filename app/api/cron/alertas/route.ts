@@ -98,11 +98,38 @@ export async function GET(req: NextRequest) {
 
   // ── Cuidados atrasados ──────────────────────────────────────────────────────
   const cuidados = await prisma.cuidado.findMany({
-    where: { ativo: true, proximaExecucao: { lte: agora } },
-    include: { pet: { include: { familia: { include: { membros: true } } } } },
+    where: { ativo: true },
+    include: {
+      pet: { include: { familia: { include: { membros: true } } } },
+      execucoes: { orderBy: { executadoEm: 'desc' }, take: 10 },
+    },
   })
 
   for (const cuidado of cuidados) {
+    let isAtrasado = false
+
+    if (cuidado.configuracao) {
+      try {
+        const conf = JSON.parse(cuidado.configuracao) as { vezesPorDia: number; horarios: string[] }
+        if (Array.isArray(conf.horarios) && conf.horarios.length > 0) {
+          const hojeInicio = new Date(agora)
+          hojeInicio.setHours(0, 0, 0, 0)
+          const execHoje = cuidado.execucoes.filter(e => e.executadoEm >= hojeInicio).length
+          const slotsPassados = conf.horarios.filter(h => {
+            const [hh, mm] = h.split(':').map(Number)
+            const slot = new Date(agora)
+            slot.setHours(hh, mm, 0, 0)
+            return slot.getTime() + 15 * 60_000 < agora.getTime()
+          }).length
+          isAtrasado = execHoje < slotsPassados
+        }
+      } catch { /* */ }
+    } else {
+      isAtrasado = cuidado.proximaExecucao !== null && cuidado.proximaExecucao < agora
+    }
+
+    if (!isAtrasado) continue
+
     const titulo = 'Cuidado atrasado'
     const msgBase = `**${cuidado.tipo}** de ${cuidado.pet.emoji} ${cuidado.pet.nome} está atrasado!`
 

@@ -27,11 +27,34 @@ export async function GET(req: NextRequest) {
 
   // ── Lembretes de cuidados (nas próximas 24h) ────────────────────────────────
   const cuidados = await prisma.cuidado.findMany({
-    where: { ativo: true, proximaExecucao: { gte: agora, lte: amanha } },
+    where: { ativo: true },
     include: { pet: { include: { familia: { include: { membros: true } } } } },
   })
 
   for (const cuidado of cuidados) {
+    let proximaData: Date | null = null
+
+    if (cuidado.configuracao) {
+      try {
+        const conf = JSON.parse(cuidado.configuracao) as { vezesPorDia: number; horarios: string[] }
+        if (Array.isArray(conf.horarios) && conf.horarios.length > 0) {
+          // Para intradiário: lembrete para o primeiro slot de amanhã
+          const amanhaCedo = new Date(agora)
+          amanhaCedo.setDate(agora.getDate() + 1)
+          amanhaCedo.setHours(0, 0, 0, 0)
+          const [hh, mm] = conf.horarios[0].split(':').map(Number)
+          const slot = new Date(amanhaCedo)
+          slot.setHours(hh, mm, 0, 0)
+          if (slot <= amanha) proximaData = slot
+        }
+      } catch { /* */ }
+    } else {
+      proximaData = cuidado.proximaExecucao
+    }
+
+    if (!proximaData) continue
+    if (proximaData < agora || proximaData > amanha) continue
+
     const titulo = 'Lembrete de cuidado'
     const msgBase = `**${cuidado.tipo}** de ${cuidado.pet.emoji} ${cuidado.pet.nome} é amanhã!`
 

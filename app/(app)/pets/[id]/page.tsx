@@ -85,6 +85,7 @@ export default async function PetPage({ params }: { params: Promise<{ id: string
     id: c.id,
     tipo: c.tipo,
     frequenciaDias: c.frequenciaDias,
+    configuracao: c.configuracao ?? null,
     ultimaExecucao: c.ultimaExecucao?.toISOString() ?? null,
     proximaExecucao: c.proximaExecucao?.toISOString() ?? null,
     ativo: c.ativo,

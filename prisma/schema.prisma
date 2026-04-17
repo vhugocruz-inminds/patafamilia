@@ -147,6 +147,7 @@ model Cuidado {
   id              String    @id @default(uuid())
   tipo            String
   frequenciaDias  Int       @map("frequencia_dias")
+  configuracao    String?   @map("configuracao")
   ultimaExecucao DateTime? @map("ultima_execucao")
   proximaExecucao DateTime? @map("proxima_execucao")
   ativo           Boolean   @default(true)
